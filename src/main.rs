@@ -10,7 +10,9 @@ fn main() -> io::Result<()> {
     let fname = "mply3.com";
     let buf = read_program(fname)?;
 
-    let mut cpu = cpu65::CPU::new();
+    let mem: [u8; cpu65::MAX_MEM] = [0; cpu65::MAX_MEM];
+
+    let mut cpu = cpu65::CPU::new(mem);
 
     if cpu.load(buf) != true {
         panic!("Load failed!");
@@ -23,8 +25,11 @@ fn main() -> io::Result<()> {
     println!();
 
     cpu.set_pc(0x8000);
-    let oc = cpu.get_opcode();
-    println!("opcode: {} -> {}", oc.code, oc.mnemonic);
+    for _ in 0..6 {
+        let oc = cpu.get_opcode();
+        println!("opcode: {} -> {}", oc.code, oc.mnemonic);
+        cpu.step();
+    }
 
     // let fname = "mem.bin";
     // fs::write(fname, &cpu.get_mem()[..])?;
