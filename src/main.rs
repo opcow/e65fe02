@@ -27,7 +27,7 @@ fn main() -> io::Result<()> {
     cpu.set_pc(0x8000);
     for _ in 0..6 {
         let oc = cpu.get_opcode();
-        println!("opcode: {} -> {}", oc.code, oc.mnemonic);
+        println!("opcode: {:>04X} -> {}: {:?}", oc.code, oc.mnemonic, oc.mode);
         cpu.step();
     }
 

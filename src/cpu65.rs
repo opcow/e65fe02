@@ -2,6 +2,7 @@ use crate::cpu65::{Modes::*, Regs::*};
 
 pub const MAX_MEM: usize = 0x10000;
 
+#[derive(Debug)]
 pub enum Modes {
     Inx, // indirect x
     Zpg, // zero page
@@ -112,9 +113,9 @@ impl<'a> CPU {
             Zpg => &self.mem[self.mem[self.pc + 1] as usize],
             Abs => &self.mem[self.get_op_16()],
             Inx => &self.mem[self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize)],
-            Iny => &self.mem[self.get_op_16() + self.y as usize], //fix me
+            Iny => &self.mem[self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize], //fix me?
             Zpx => &self.mem[self.pc + 1 + self.x as usize],
-            Aby => &self.mem[self.get_op_16() + self.y as usize], //fix me
+            Aby => &self.mem[self.get_op_16() + self.y as usize],
             Abx => &self.mem[self.get_op_16() + self.x as usize],
             Acc => &self.a,
             _ => panic!("Instruction mode doesn't target an address!"),
