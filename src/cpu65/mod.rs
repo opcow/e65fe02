@@ -1,3 +1,6 @@
+pub mod emu;
+
+use crate::cpu65::emu::EMU_FUNCS;
 use crate::cpu65::{Modes::*, Regs::*};
 
 pub const MAX_MEM: usize = 0x10000;
@@ -34,6 +37,18 @@ pub enum Regs {
     Yreg = 4,
     Memm = 5,
     Addr = 6,
+}
+
+// the status register
+enum Status {
+    C, // carry
+    Z, // zero
+    I, // interrupt
+    D, // decimal
+    B, // break
+    U, // unused
+    V, // overflow
+    N, // negative
 }
 
 // CPU virtual processor + memory
@@ -107,27 +122,51 @@ impl<'a> CPU {
         (self.mem[a] as usize) & (self.mem[a + 1] as usize) << 8
     }
 
-    pub fn get_eff_addr(&self) -> &u8 {
+    pub fn get_eff_addr(&self) -> usize {
         match &OPCODES[self.mem[self.pc] as usize].mode {
-            Imm => &self.mem[self.pc + 1],
-            Zpg => &self.mem[self.mem[self.pc + 1] as usize],
-            Abs => &self.mem[self.get_op_16()],
-            Inx => &self.mem[self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize)],
-            Iny => &self.mem[self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize], //fix me?
-            Zpx => &self.mem[self.pc + 1 + self.x as usize],
-            Aby => &self.mem[self.get_op_16() + self.y as usize],
-            Abx => &self.mem[self.get_op_16() + self.x as usize],
-            Acc => &self.a,
+            Imm => self.pc + 1,
+            Zpg => self.mem[self.pc + 1] as usize,
+            Abs => self.get_op_16(),
+            Inx => self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize),
+            Iny => self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize, //fix me?
+            Zpx => self.pc + 1 + self.x as usize,
+            Aby => self.get_op_16() + self.y as usize,
+            Abx => self.get_op_16() + self.x as usize,
+            // Acc => &self.a,
             _ => panic!("Instruction mode doesn't target an address!"),
         }
     }
 
+    pub fn fetch(&self) {
+        let opcode = self.get_opcode();
+
+        match opcode.target {
+            Memm => self.get_eff_addr(),
+            _ => 0,
+        };
+    }
+
     pub fn step(&mut self) {
+        // self.get_op_16();
+        // let f: fn(&CPU) = CPU::testy;
+        // f(&self);
+        EMU_FUNCS[self.mem[self.pc] as usize](self);
+
         self.pc += &OPCODES[self.mem[self.pc] as usize].length
     }
 
     pub fn get_opcode(&self) -> &Opcode {
         &OPCODES[self.mem[self.pc] as usize]
+    }
+
+    fn emu_not_impl(&mut self) {
+        println!("Opcode not implemented!");
+    }
+
+    pub fn emu_cld(&mut self) {
+        println!("Opcode CLD!");
+        self.status = 0xff;
+        self.status &= !(1 << (Status::D as u8));
     }
 }
 

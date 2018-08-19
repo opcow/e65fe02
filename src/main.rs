@@ -13,6 +13,7 @@ fn main() -> io::Result<()> {
     let mem: [u8; cpu65::MAX_MEM] = [0; cpu65::MAX_MEM];
 
     let mut cpu = cpu65::CPU::new(mem);
+    cpu.emu_cld();
 
     if cpu.load(buf) != true {
         panic!("Load failed!");
@@ -30,6 +31,8 @@ fn main() -> io::Result<()> {
         println!("opcode: {:>04X} -> {}: {:?}", oc.code, oc.mnemonic, oc.mode);
         cpu.step();
     }
+    cpu65::emu::EMU_FUNCS[0](&mut cpu);
+    cpu65::emu::EMU_FUNCS[1](&mut cpu);
 
     // let fname = "mem.bin";
     // fs::write(fname, &cpu.get_mem()[..])?;
