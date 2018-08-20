@@ -17,7 +17,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x0d: ORA
     CPU::emu_not_impl, // 0x0e: ASL
     CPU::emu_not_impl, // 0x0f:
-    CPU::emu_not_impl, // 0x10: BPL
+    CPU::emu_bra,      // 0x10: BPL
     CPU::emu_not_impl, // 0x11: ORA
     CPU::emu_not_impl, // 0x12:
     CPU::emu_not_impl, // 0x13:
@@ -49,7 +49,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x2d: AND
     CPU::emu_not_impl, // 0x2e: ROL
     CPU::emu_not_impl, // 0x2f:
-    CPU::emu_not_impl, // 0x30: BMI
+    CPU::emu_bra,      // 0x30: BMI
     CPU::emu_not_impl, // 0x31: AND
     CPU::emu_not_impl, // 0x32:
     CPU::emu_not_impl, // 0x33:
@@ -81,7 +81,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x4d: EOR
     CPU::emu_not_impl, // 0x4e: LSR
     CPU::emu_not_impl, // 0x4f:
-    CPU::emu_not_impl, // 0x50: BVC
+    CPU::emu_bra,      // 0x50: BVC
     CPU::emu_not_impl, // 0x51: EOR
     CPU::emu_not_impl, // 0x52:
     CPU::emu_not_impl, // 0x53:
@@ -113,7 +113,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x6d: ADC
     CPU::emu_ror,      // 0x6e: ROR
     CPU::emu_not_impl, // 0x6f:
-    CPU::emu_not_impl, // 0x70: BVS
+    CPU::emu_bra,      // 0x70: BVS
     CPU::emu_not_impl, // 0x71: ADC
     CPU::emu_not_impl, // 0x72:
     CPU::emu_not_impl, // 0x73:
@@ -145,7 +145,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_sta,      // 0x8d: STA
     CPU::emu_not_impl, // 0x8e: STX
     CPU::emu_not_impl, // 0x8f:
-    CPU::emu_not_impl, // 0x90: BCC
+    CPU::emu_bra,      // 0x90: BCC
     CPU::emu_sta,      // 0x91: STA
     CPU::emu_not_impl, // 0x92:
     CPU::emu_not_impl, // 0x93:
@@ -177,7 +177,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0xad: LDA
     CPU::emu_not_impl, // 0xae: LDX
     CPU::emu_not_impl, // 0xaf:
-    CPU::emu_not_impl, // 0xb0: BCS
+    CPU::emu_bra,      // 0xb0: BCS
     CPU::emu_not_impl, // 0xb1: LDA
     CPU::emu_not_impl, // 0xb2:
     CPU::emu_not_impl, // 0xb3:
@@ -209,7 +209,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0xcd: CMP
     CPU::emu_not_impl, // 0xce: DEC
     CPU::emu_not_impl, // 0xcf:
-    CPU::emu_not_impl, // 0xd0: BNE
+    CPU::emu_bra,      // 0xd0: BNE
     CPU::emu_not_impl, // 0xd1: CMP
     CPU::emu_not_impl, // 0xd2:
     CPU::emu_not_impl, // 0xd3:
@@ -241,7 +241,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0xed: SBC
     CPU::emu_not_impl, // 0xee: INC
     CPU::emu_not_impl, // 0xef:
-    CPU::emu_not_impl, // 0xf0: BEQ
+    CPU::emu_bra,      // 0xf0: BEQ
     CPU::emu_not_impl, // 0xf1: SBC
     CPU::emu_not_impl, // 0xf2:
     CPU::emu_not_impl, // 0xf3:

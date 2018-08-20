@@ -236,6 +236,26 @@ impl<'a> CPU {
     //     self.status |= self.a & 1;
     //     self.a = self.status & ((Status::C as u8) << 7);
     // }
+
+    fn emu_bra(&mut self) {
+        let status: bool;
+        match self.mem[self.pc] {
+            0x10 => status = (self.status & (1 << Status::N as u8)) == 0,
+            0x30 => status = (self.status & (1 << Status::N as u8)) != 0,
+            0x50 => status = (self.status & (1 << Status::V as u8)) == 0,
+            0x70 => status = (self.status & (1 << Status::V as u8)) != 0,
+            0x90 => status = (self.status & (1 << Status::C as u8)) == 0,
+            0xb0 => status = (self.status & (1 << Status::C as u8)) != 0,
+            0xd0 => status = (self.status & (1 << Status::Z as u8)) == 0,
+            0xf0 => status = (self.status & (1 << Status::Z as u8)) != 0,
+            _ => panic!("Encountered unknown branch opcode!"),
+        }
+        if status {
+            self.pc = 2 + ((self.pc as isize) + (self.mem[self.pc] as i8) as isize) as usize;
+        } else {
+            self.pc += 2;
+        }
+    }
 }
 
 pub struct Opcode {
