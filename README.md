@@ -2,4 +2,4 @@
 
 **An NMOS 6502 emulator in Rust**
 
-* 1 instruction currently emulated
+* 6 instructions currently emulated

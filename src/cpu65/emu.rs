@@ -25,7 +25,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x15: ORA
     CPU::emu_not_impl, // 0x16: ASL
     CPU::emu_not_impl, // 0x17:
-    CPU::emu_not_impl, // 0x18: CLC
+    CPU::emu_clc,      // 0x18: CLC
     CPU::emu_not_impl, // 0x19: ORA
     CPU::emu_not_impl, // 0x1a:
     CPU::emu_not_impl, // 0x1b:
@@ -33,7 +33,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x1d: ORA
     CPU::emu_not_impl, // 0x1e: ASL
     CPU::emu_not_impl, // 0x1f:
-    CPU::emu_not_impl, // 0x20: JSR
+    CPU::emu_jsr,      // 0x20: JSR
     CPU::emu_not_impl, // 0x21: AND
     CPU::emu_not_impl, // 0x22:
     CPU::emu_not_impl, // 0x23:
@@ -103,15 +103,15 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x63:
     CPU::emu_not_impl, // 0x64:
     CPU::emu_not_impl, // 0x65: ADC
-    CPU::emu_not_impl, // 0x66: ROR
+    CPU::emu_ror,      // 0x66: ROR
     CPU::emu_not_impl, // 0x67:
     CPU::emu_not_impl, // 0x68: PLA
     CPU::emu_not_impl, // 0x69: ADC
-    CPU::emu_not_impl, // 0x6a: ROR
+    CPU::emu_ror,      // 0x6a: ROR
     CPU::emu_not_impl, // 0x6b:
     CPU::emu_not_impl, // 0x6c: JMP
     CPU::emu_not_impl, // 0x6d: ADC
-    CPU::emu_not_impl, // 0x6e: ROR
+    CPU::emu_ror,      // 0x6e: ROR
     CPU::emu_not_impl, // 0x6f:
     CPU::emu_not_impl, // 0x70: BVS
     CPU::emu_not_impl, // 0x71: ADC
@@ -119,7 +119,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x73:
     CPU::emu_not_impl, // 0x74:
     CPU::emu_not_impl, // 0x75: ADC
-    CPU::emu_not_impl, // 0x76: ROR
+    CPU::emu_ror,      // 0x76: ROR
     CPU::emu_not_impl, // 0x77:
     CPU::emu_not_impl, // 0x78: SEI
     CPU::emu_not_impl, // 0x79: ADC
@@ -127,14 +127,14 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x7b:
     CPU::emu_not_impl, // 0x7c:
     CPU::emu_not_impl, // 0x7d: ADC
-    CPU::emu_not_impl, // 0x7e: ROR
+    CPU::emu_ror,      // 0x7e: ROR
     CPU::emu_not_impl, // 0x7f:
     CPU::emu_not_impl, // 0x80:
-    CPU::emu_not_impl, // 0x81: STA
+    CPU::emu_sta,      // 0x81: STA
     CPU::emu_not_impl, // 0x82:
     CPU::emu_not_impl, // 0x83:
     CPU::emu_not_impl, // 0x84: STY
-    CPU::emu_not_impl, // 0x85: STA
+    CPU::emu_sta,      // 0x85: STA
     CPU::emu_not_impl, // 0x86: STX
     CPU::emu_not_impl, // 0x87:
     CPU::emu_not_impl, // 0x88: DEY
@@ -142,30 +142,30 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x8a: TXA
     CPU::emu_not_impl, // 0x8b:
     CPU::emu_not_impl, // 0x8c: STY
-    CPU::emu_not_impl, // 0x8d: STA
+    CPU::emu_sta,      // 0x8d: STA
     CPU::emu_not_impl, // 0x8e: STX
     CPU::emu_not_impl, // 0x8f:
     CPU::emu_not_impl, // 0x90: BCC
-    CPU::emu_not_impl, // 0x91: STA
+    CPU::emu_sta,      // 0x91: STA
     CPU::emu_not_impl, // 0x92:
     CPU::emu_not_impl, // 0x93:
     CPU::emu_not_impl, // 0x94: STY
-    CPU::emu_not_impl, // 0x95: STA
+    CPU::emu_sta,      // 0x95: STA
     CPU::emu_not_impl, // 0x96: STX
     CPU::emu_not_impl, // 0x97:
     CPU::emu_not_impl, // 0x98: TYA
-    CPU::emu_not_impl, // 0x99: STA
+    CPU::emu_sta,      // 0x99: STA
     CPU::emu_not_impl, // 0x9a: TXS
     CPU::emu_not_impl, // 0x9b:
     CPU::emu_not_impl, // 0x9c:
-    CPU::emu_not_impl, // 0x9d: STA
+    CPU::emu_sta,      // 0x9d: STA
     CPU::emu_not_impl, // 0x9e:
     CPU::emu_not_impl, // 0x9f:
-    CPU::emu_not_impl, // 0xa0: LDY
+    CPU::emu_ldy,      // 0xa0: LDY
     CPU::emu_not_impl, // 0xa1: LDA
     CPU::emu_not_impl, // 0xa2: LDX
     CPU::emu_not_impl, // 0xa3:
-    CPU::emu_not_impl, // 0xa4: LDY
+    CPU::emu_ldy,      // 0xa4: LDY
     CPU::emu_not_impl, // 0xa5: LDA
     CPU::emu_not_impl, // 0xa6: LDX
     CPU::emu_not_impl, // 0xa7:
@@ -173,7 +173,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0xa9: LDA
     CPU::emu_not_impl, // 0xaa: TAX
     CPU::emu_not_impl, // 0xab:
-    CPU::emu_not_impl, // 0xac: LDY
+    CPU::emu_ldy,      // 0xac: LDY
     CPU::emu_not_impl, // 0xad: LDA
     CPU::emu_not_impl, // 0xae: LDX
     CPU::emu_not_impl, // 0xaf:
@@ -181,7 +181,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0xb1: LDA
     CPU::emu_not_impl, // 0xb2:
     CPU::emu_not_impl, // 0xb3:
-    CPU::emu_not_impl, // 0xb4: LDY
+    CPU::emu_ldy,      // 0xb4: LDY
     CPU::emu_not_impl, // 0xb5: LDA
     CPU::emu_not_impl, // 0xb6: LDX
     CPU::emu_not_impl, // 0xb7:
@@ -189,7 +189,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0xb9: LDA
     CPU::emu_not_impl, // 0xba: TSX
     CPU::emu_not_impl, // 0xbb:
-    CPU::emu_not_impl, // 0xbc: LDY
+    CPU::emu_ldy,      // 0xbc: LDY
     CPU::emu_not_impl, // 0xbd: LDA
     CPU::emu_not_impl, // 0xbe: LDX
     CPU::emu_not_impl, // 0xbf:

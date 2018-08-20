@@ -3,7 +3,8 @@ pub mod emu;
 use crate::cpu65::emu::EMU_FUNCS;
 use crate::cpu65::{Modes::*, Regs::*};
 
-pub const MAX_MEM: usize = 0x10000;
+pub const MAX_ADDR: usize = 0xffff;
+pub const MEM_SIZE: usize = MAX_ADDR + 2;
 
 #[derive(Debug)]
 pub enum Modes {
@@ -16,7 +17,6 @@ pub enum Modes {
     Aby, // absolute y
     Abx, // absolute x
     Ind, // indirect
-    // no 0x09 mode
     Acc, // accumulator
     Rel, // relative
     Imp, // implied
@@ -25,18 +25,18 @@ pub enum Modes {
 }
 
 enum Target {
-    Mem([u8; MAX_MEM]),
+    Mem([u8; MEM_SIZE]),
     Reg(u8),
 }
 
 pub enum Regs {
-    Norg = 0,
-    Preg = 1,
-    Areg = 2,
-    Xreg = 3,
-    Yreg = 4,
-    Memm = 5,
-    Addr = 6,
+    Norg,
+    Preg,
+    Areg,
+    Xreg,
+    Yreg,
+    Memm,
+    Addr,
 }
 
 // the status register
@@ -53,13 +53,13 @@ enum Status {
 
 // CPU virtual processor + memory
 pub struct CPU {
-    a:      u8,
+    a:      usize,
     x:      u8,
     y:      u8,
     status: u8,
-    sp:     u8,
+    sp:     usize,
     pc:     usize,
-    mem:    [u8; MAX_MEM],
+    mem:    [u8; MEM_SIZE],
 }
 
 use std::fmt;
@@ -70,16 +70,25 @@ impl fmt::Display for CPU {
 }
 
 impl<'a> CPU {
-    pub fn new(m: [u8; 65536]) -> CPU {
+    pub fn new(m: [u8; MEM_SIZE]) -> CPU {
         CPU {
-            a:      0,
+            // register a is stored in extra byte of memory
+            // this makes addressing modes easier
+            // (or could be a huge mistake)
+            a:      0x10000,
             x:      0,
             y:      0,
             status: 0,
-            sp:     0,
+            sp:     0xff,
             pc:     0,
             mem:    m,
         }
+    }
+
+    fn push_16(&mut self, n: i16) {
+        self.mem[self.sp - 1] = n as u8;
+        self.mem[self.sp] = (n >> 8) as u8;
+        self.sp -= 2;
     }
 
     pub fn set_pc(&mut self, pc: usize) {
@@ -114,30 +123,52 @@ impl<'a> CPU {
         true
     }
 
-    fn get_op_16(&self) -> usize {
-        (self.mem[self.pc + 1] as usize) | (self.mem[self.pc + 1] as usize) << 8
+    fn get_op_addr(&self) -> usize {
+        (self.mem[self.pc + 1] as usize) | (self.mem[self.pc + 2] as usize) << 8
+    }
+
+    fn get_op_16(&self) -> u16 {
+        (self.mem[self.pc + 1] as u16) | (self.mem[self.pc + 2] as u16) << 8
+    }
+
+    fn get_op_8(&self) -> u8 {
+        self.mem[self.pc + 1]
     }
 
     fn get_mem_16(&self, a: usize) -> usize {
         (self.mem[a] as usize) & (self.mem[a + 1] as usize) << 8
     }
 
-    pub fn get_eff_addr(&self) -> usize {
-        match &OPCODES[self.mem[self.pc] as usize].mode {
+    pub fn get_eff_addr(&mut self) -> usize {
+        match OPCODES[self.mem[self.pc] as usize].mode {
             Imm => self.pc + 1,
             Zpg => self.mem[self.pc + 1] as usize,
-            Abs => self.get_op_16(),
+            Abs => self.get_op_addr(),
             Inx => self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize),
             Iny => self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize, //fix me?
             Zpx => self.pc + 1 + self.x as usize,
-            Aby => self.get_op_16() + self.y as usize,
-            Abx => self.get_op_16() + self.x as usize,
-            // Acc => &self.a,
+            Aby => self.get_op_addr() + self.y as usize,
+            Abx => self.get_op_addr() + self.x as usize,
+            Acc => self.a,
             _ => panic!("Instruction mode doesn't target an address!"),
         }
     }
 
-    pub fn fetch(&self) {
+    fn set_nz_reg(&mut self, r: u8) {
+        if r == 0 {
+            self.status |= 1 << Status::Z as u8;
+            self.status &= !(1 << (Status::N as u8));
+        } else {
+            self.status &= !(1 << (Status::Z as u8));
+            if r & (1 << 7) != 0 {
+                self.status |= 1 << Status::N as u8;
+            } else {
+                self.status &= !(1 << (Status::N as u8));
+            }
+        }
+    }
+
+    pub fn fetch(&mut self) {
         let opcode = self.get_opcode();
 
         match opcode.target {
@@ -147,12 +178,19 @@ impl<'a> CPU {
     }
 
     pub fn step(&mut self) {
-        // self.get_op_16();
-        // let f: fn(&CPU) = CPU::testy;
-        // f(&self);
+        let oc = self.get_opcode();
+        println!(
+            "{:>04X} {:>02X} -> {}: {:?}",
+            self.pc, oc.code, oc.mnemonic, oc.mode
+        );
+
         EMU_FUNCS[self.mem[self.pc] as usize](self);
 
-        self.pc += &OPCODES[self.mem[self.pc] as usize].length
+        self.pc += &OPCODES[self.mem[self.pc] as usize].length;
+        if self.pc > MAX_ADDR {
+            // fix me : wrap around or panic?
+            self.pc ^= 0xffff;
+        }
     }
 
     pub fn get_opcode(&self) -> &Opcode {
@@ -160,14 +198,44 @@ impl<'a> CPU {
     }
 
     fn emu_not_impl(&mut self) {
-        println!("Opcode not implemented!");
+        let o = self.get_opcode();
+        panic!(format!(
+            "Emulation for instruction {} not implemented!",
+            o.mnemonic
+        ));
     }
 
-    pub fn emu_cld(&mut self) {
-        println!("Opcode CLD!");
-        self.status = 0xff;
+    fn emu_cld(&mut self) {
         self.status &= !(1 << (Status::D as u8));
     }
+
+    fn emu_clc(&mut self) {
+        self.status &= !(1 << (Status::C as u8));
+    }
+
+    fn emu_jsr(&mut self) {
+        self.pc = self.get_op_addr();
+    }
+
+    fn emu_sta(&mut self) {
+        self.mem[self.a] = self.get_op_8();
+    }
+
+    fn emu_ldy(&mut self) {
+        self.y = self.mem[self.get_eff_addr()];
+        self.set_nz_reg(self.y);
+    }
+
+    fn emu_ror(&mut self) {
+        let addr = self.get_eff_addr();
+        self.status |= self.mem[addr] & 1;
+        self.mem[addr] = self.status & ((Status::C as u8) << 7);
+    }
+
+    // fn emu_ror_a(&mut self) {
+    //     self.status |= self.a & 1;
+    //     self.a = self.status & ((Status::C as u8) << 7);
+    // }
 }
 
 pub struct Opcode {
