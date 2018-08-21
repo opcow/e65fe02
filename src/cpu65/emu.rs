@@ -1,7 +1,7 @@
 use crate::cpu65::CPU;
 
-pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
-    CPU::emu_not_impl, // 0x00: BRK
+pub const EMU_FUNCS: [fn(&mut CPU); 256] = [
+    CPU::emu_brk,      // 0x00: BRK
     CPU::emu_not_impl, // 0x01: ORA
     CPU::emu_not_impl, // 0x02:
     CPU::emu_not_impl, // 0x03:
@@ -39,15 +39,15 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x23:
     CPU::emu_not_impl, // 0x24: BIT
     CPU::emu_not_impl, // 0x25: AND
-    CPU::emu_not_impl, // 0x26: ROL
+    CPU::emu_rol,      // 0x26: ROL
     CPU::emu_not_impl, // 0x27:
     CPU::emu_not_impl, // 0x28: PLP
     CPU::emu_not_impl, // 0x29: AND
-    CPU::emu_not_impl, // 0x2a: ROL
+    CPU::emu_rol,      // 0x2a: ROL
     CPU::emu_not_impl, // 0x2b:
     CPU::emu_not_impl, // 0x2c: BIT
     CPU::emu_not_impl, // 0x2d: AND
-    CPU::emu_not_impl, // 0x2e: ROL
+    CPU::emu_rol,      // 0x2e: ROL
     CPU::emu_not_impl, // 0x2f:
     CPU::emu_bra,      // 0x30: BMI
     CPU::emu_not_impl, // 0x31: AND
@@ -55,7 +55,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x33:
     CPU::emu_not_impl, // 0x34:
     CPU::emu_not_impl, // 0x35: AND
-    CPU::emu_not_impl, // 0x36: ROL
+    CPU::emu_rol,      // 0x36: ROL
     CPU::emu_not_impl, // 0x37:
     CPU::emu_not_impl, // 0x38: SEC
     CPU::emu_not_impl, // 0x39: AND
@@ -63,7 +63,7 @@ pub static EMU_FUNCS: [fn(&mut CPU); 256] = [
     CPU::emu_not_impl, // 0x3b:
     CPU::emu_not_impl, // 0x3c:
     CPU::emu_not_impl, // 0x3d: AND
-    CPU::emu_not_impl, // 0x3e: ROL
+    CPU::emu_rol,      // 0x3e: ROL
     CPU::emu_not_impl, // 0x3f:
     CPU::emu_not_impl, // 0x40: RTI
     CPU::emu_not_impl, // 0x41: EOR

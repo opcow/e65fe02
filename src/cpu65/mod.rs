@@ -4,7 +4,7 @@ use crate::cpu65::emu::EMU_FUNCS;
 use crate::cpu65::{Modes::*, Regs::*};
 
 pub const MAX_ADDR: usize = 0xffff;
-pub const MEM_SIZE: usize = MAX_ADDR + 2;
+pub const MEM_SIZE: usize = MAX_ADDR + 1;
 
 #[derive(Debug)]
 pub enum Modes {
@@ -53,13 +53,14 @@ enum Status {
 
 // CPU virtual processor + memory
 pub struct CPU {
-    a:      usize,
+    a:      u8,
     x:      u8,
     y:      u8,
     status: u8,
-    sp:     usize,
+    sp:     u8,
     pc:     usize,
     mem:    [u8; MEM_SIZE],
+    count:  i32,
 }
 
 use std::fmt;
@@ -75,19 +76,26 @@ impl<'a> CPU {
             // register a is stored in extra byte of memory
             // this makes addressing modes easier
             // (or could be a huge mistake)
-            a:      0x10000,
+            a:      0, // address of reg a in memmory
             x:      0,
             y:      0,
             status: 0,
             sp:     0xff,
             pc:     0,
             mem:    m,
+            count:  256,
         }
     }
 
-    fn push_16(&mut self, n: i16) {
-        self.mem[self.sp - 1] = n as u8;
-        self.mem[self.sp] = (n >> 8) as u8;
+    #[inline(always)]
+    fn push_8(&mut self, n: u8) {
+        self.mem[0x100 + self.sp as usize] = n;
+        self.sp -= 1;
+    }
+    #[inline(always)]
+    fn push_16(&mut self, n: u16) {
+        self.mem[0x100 + self.sp as usize - 1] = n as u8;
+        self.mem[self.sp as usize] = (n >> 8) as u8;
         self.sp -= 2;
     }
 
@@ -123,37 +131,40 @@ impl<'a> CPU {
         true
     }
 
+    #[inline(always)]
     fn get_op_addr(&self) -> usize {
         (self.mem[self.pc + 1] as usize) | (self.mem[self.pc + 2] as usize) << 8
     }
-
+    #[inline(always)]
     fn get_op_16(&self) -> u16 {
         (self.mem[self.pc + 1] as u16) | (self.mem[self.pc + 2] as u16) << 8
     }
-
+    #[inline(always)]
     fn get_op_8(&self) -> u8 {
         self.mem[self.pc + 1]
     }
-
+    #[inline(always)]
     fn get_mem_16(&self, a: usize) -> usize {
         (self.mem[a] as usize) & (self.mem[a + 1] as usize) << 8
     }
 
-    pub fn get_eff_addr(&mut self) -> usize {
+    pub fn get_eff_addr(&mut self) -> &mut u8 {
+        // fix me zero page wrapping
         match OPCODES[self.mem[self.pc] as usize].mode {
-            Imm => self.pc + 1,
-            Zpg => self.mem[self.pc + 1] as usize,
-            Abs => self.get_op_addr(),
-            Inx => self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize),
-            Iny => self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize, //fix me?
-            Zpx => self.pc + 1 + self.x as usize,
-            Aby => self.get_op_addr() + self.y as usize,
-            Abx => self.get_op_addr() + self.x as usize,
-            Acc => self.a,
+            Imm => &mut self.mem[self.pc + 1],
+            Zpg => &mut self.mem[self.mem[self.pc + 1] as usize],
+            Abs => &mut self.mem[self.get_op_addr()],
+            Inx => &mut self.mem[self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize)],
+            Iny => &mut self.mem[self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize], //fix me?
+            Zpx => &mut self.mem[self.pc + 1 + self.x as usize],
+            Aby => &mut self.mem[self.get_op_addr() + self.y as usize],
+            Abx => &mut self.mem[self.get_op_addr() + self.x as usize],
+            Acc => &mut self.a,
             _ => panic!("Instruction mode doesn't target an address!"),
         }
     }
 
+    #[inline(always)]
     fn set_nz_reg(&mut self, r: u8) {
         if r == 0 {
             self.status |= 1 << Status::Z as u8;
@@ -169,12 +180,12 @@ impl<'a> CPU {
     }
 
     pub fn fetch(&mut self) {
-        let opcode = self.get_opcode();
+        // let opcode = self.get_opcode();
 
-        match opcode.target {
-            Memm => self.get_eff_addr(),
-            _ => 0,
-        };
+        // match opcode.target {
+        //     Memm => self.get_eff_addr(),
+        //     _ => 0,
+        // };
     }
 
     pub fn step(&mut self) {
@@ -192,12 +203,12 @@ impl<'a> CPU {
             self.pc ^= 0xffff;
         }
     }
-
+    #[inline(always)]
     pub fn get_opcode(&self) -> &Opcode {
         &OPCODES[self.mem[self.pc] as usize]
     }
 
-    fn emu_not_impl(&mut self) {
+    pub fn emu_not_impl(&mut self) {
         let o = self.get_opcode();
         panic!(format!(
             "Emulation for instruction {} not implemented!",
@@ -218,24 +229,41 @@ impl<'a> CPU {
     }
 
     fn emu_sta(&mut self) {
-        self.mem[self.a] = self.get_op_8();
+        self.a = self.get_op_8();
     }
 
     fn emu_ldy(&mut self) {
-        self.y = self.mem[self.get_eff_addr()];
+        self.y = *self.get_eff_addr();
         self.set_nz_reg(self.y);
     }
 
+    // fn emu_ror(&mut self) {
+    // let addr = self.get_eff_addr();
+    // self.status |= self.mem[addr] & 1;
+    // self.mem[addr] = self.status & ((Status::C as u8) << 7);
+    // }
+
+    // fn test(&mut self) -> &u8 {
+    //     &mut self.y
+    // }
+
     fn emu_ror(&mut self) {
+        let carry = self.status & ((Status::C as u8) << 7);
         let addr = self.get_eff_addr();
-        self.status |= self.mem[addr] & 1;
-        self.mem[addr] = self.status & ((Status::C as u8) << 7);
+        let bit0 = *addr & 1;
+        *addr >>= 1;
+        *addr |= carry; // carry goes into bit 7
+        self.status |= bit0; // bit 0 goes into carry bit
     }
 
-    // fn emu_ror_a(&mut self) {
-    //     self.status |= self.a & 1;
-    //     self.a = self.status & ((Status::C as u8) << 7);
-    // }
+    fn emu_rol(&mut self) {
+        let carry = self.status & (Status::C as u8);
+        let addr = self.get_eff_addr();
+        let bit7 = *addr & (1 << 7);
+        *addr <<= 1;
+        *addr |= carry; // carry goes into bit 0
+        self.status |= bit7 >> 7; // bit 0 goes into carry bit
+    }
 
     fn emu_bra(&mut self) {
         let status: bool;
@@ -256,6 +284,13 @@ impl<'a> CPU {
             self.pc += 2;
         }
     }
+
+    fn emu_brk(&mut self) {
+        self.push_16(self.pc as u16);
+        self.push_8(self.status);
+        self.pc = self.get_mem_16(0xfffe);
+        self.status |= 1 << Status::B as u8;
+    }
 }
 
 pub struct Opcode {
@@ -268,7 +303,7 @@ pub struct Opcode {
 
 // use cpu65::Modes::*;
 #[cfg_attr(rustfmt, rustfmt_skip)]
-const OPCODES: [Opcode; 256] = [
+pub const OPCODES: [Opcode; 256] = [
 Opcode { code: 0x00, length: 1, mode: Imp, target: Norg, mnemonic: "BRK", },
 Opcode { code: 0x01, length: 2, mode: Inx, target: Areg, mnemonic: "ORA", },
 Opcode { code: 0x02, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
