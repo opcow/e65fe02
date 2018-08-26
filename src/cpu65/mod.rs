@@ -1,42 +1,28 @@
 pub mod emu;
 
-use crate::cpu65::emu::EMU_FUNCS;
-use crate::cpu65::{Modes::*, Regs::*};
+// use crate::cpu65::emu::EMU_FUNCS;
+//use crate::cpu65::emu::EMU_FUNCS;
+use crate::cpu65::Modes::*;
 
-pub const MAX_ADDR: usize = 0xffff;
-pub const MEM_SIZE: usize = MAX_ADDR + 1;
+pub const MAX_ADD: usize = 0xffff;
+pub const MEM_SIZE: usize = MAX_ADD + 1;
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub enum Modes {
-    Inx, // indirect x
-    Zpg, // zero page
-    Imm, // immediate mode
-    Abs, // absolute
-    Iny, // indirect y
-    Zpx, // zero page x
-    Aby, // absolute y
-    Abx, // absolute x
-    Ind, // indirect
-    Acc, // accumulator
-    Rel, // relative
-    Imp, // implied
-    Zpy, // zero page y
+    Inx(fn(&mut CPU) -> &mut u8), // indirect x
+    Zpg(fn(&mut CPU) -> &mut u8), // zero page
+    Imm(fn(&mut CPU) -> &mut u8), // immediate mode
+    Abs(fn(&mut CPU) -> &mut u8), // absolute
+    Iny(fn(&mut CPU) -> &mut u8), // indirect y
+    Zpx(fn(&mut CPU) -> &mut u8), // zero page x
+    Aby(fn(&mut CPU) -> &mut u8), // absolute y
+    Abx(fn(&mut CPU) -> &mut u8), // absolute x
+    Ind,                          // indirect
+    Acc(fn(&mut CPU) -> &mut u8), // accumulator
+    Rel,                          // relative
+    Imp,                          // implied
+    Zpy(fn(&mut CPU) -> &mut u8), // zero page y
     Unk,
-}
-
-enum Target {
-    Mem([u8; MEM_SIZE]),
-    Reg(u8),
-}
-
-pub enum Regs {
-    Norg,
-    Preg,
-    Areg,
-    Xreg,
-    Yreg,
-    Memm,
-    Addr,
 }
 
 // the status register
@@ -58,32 +44,30 @@ pub struct CPU {
     y:      u8,
     status: u8,
     sp:     u8,
-    pc:     usize,
+    pc:     u16,
     mem:    [u8; MEM_SIZE],
-    count:  i32,
 }
 
-use std::fmt;
-impl fmt::Display for CPU {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", "I'm a 6502!")
-    }
-}
-
+// use std::fmt;
+// impl fmt::Display for CPU {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "{}", "I'm a 6502!")
+//     }
+// }
+static mut X: u8 = 0;
 impl<'a> CPU {
-    pub fn new(m: [u8; MEM_SIZE]) -> CPU {
+    pub fn new() -> CPU {
         CPU {
             // register a is stored in extra byte of memory
-            // this makes addressing modes easier
+            // this makes Addessing modes easier
             // (or could be a huge mistake)
-            a:      0, // address of reg a in memmory
+            a:      0, // Addess of reg a in Memory
             x:      0,
             y:      0,
             status: 0,
             sp:     0xff,
             pc:     0,
-            mem:    m,
-            count:  256,
+            mem:    [0; 0x10000],
         }
     }
 
@@ -95,11 +79,23 @@ impl<'a> CPU {
     #[inline(always)]
     fn push_16(&mut self, n: u16) {
         self.mem[0x100 + self.sp as usize - 1] = n as u8;
-        self.mem[self.sp as usize] = (n >> 8) as u8;
+        self.mem[0x100 + self.sp as usize] = (n >> 8) as u8;
         self.sp -= 2;
     }
 
-    pub fn set_pc(&mut self, pc: usize) {
+    fn push_op_16(&mut self) {
+        self.mem[0x100 + self.sp as usize - 1] = self.mem[self.pc as usize + 1];
+        self.mem[0x100 + self.sp as usize] = self.mem[self.pc as usize + 2];
+        self.sp -= 2;
+    }
+
+    fn pop_16(&mut self) -> u16 {
+        self.sp += 2;
+        u16::from(self.mem[0x100 + self.sp as usize - 1])
+            & u16::from(self.mem[0x100 + self.sp as usize]) << 8
+    }
+
+    pub fn set_pc(&mut self, pc: u16) {
         self.pc = pc;
     }
 
@@ -132,36 +128,93 @@ impl<'a> CPU {
     }
 
     #[inline(always)]
-    fn get_op_addr(&self) -> usize {
-        (self.mem[self.pc + 1] as usize) | (self.mem[self.pc + 2] as usize) << 8
+    fn get_op_add(&self) -> usize {
+        (self.mem[self.pc as usize + 1] as usize) | (self.mem[self.pc as usize + 2] as usize) << 8
     }
     #[inline(always)]
     fn get_op_16(&self) -> u16 {
-        (self.mem[self.pc + 1] as u16) | (self.mem[self.pc + 2] as u16) << 8
+        (self.mem[self.pc as usize + 1] as u16) | (self.mem[self.pc as usize + 2] as u16) << 8
     }
     #[inline(always)]
     fn get_op_8(&self) -> u8 {
-        self.mem[self.pc + 1]
+        self.mem[self.pc as usize + 1]
     }
     #[inline(always)]
-    fn get_mem_16(&self, a: usize) -> usize {
+    fn get_mem_16(&self, a: usize) -> u16 {
+        // let m16 = |m: &[u8], i: usize| (m[i] as usize) & (m[i + 1] as usize) << 8;
+        (self.mem[a] as u16) & (self.mem[a + 1] as u16) << 8
+    }
+
+    #[inline(always)]
+    fn get_mem_usize(&self, a: usize) -> usize {
+        // let m16 = |m: &[u8], i: usize| (m[i] as usize) & (m[i + 1] as usize) << 8;
         (self.mem[a] as usize) & (self.mem[a + 1] as usize) << 8
     }
 
-    pub fn get_eff_addr(&mut self) -> &mut u8 {
+    fn get_eff_add(&mut self) -> &mut u8 {
         // fix me zero page wrapping
-        match OPCODES[self.mem[self.pc] as usize].mode {
-            Imm => &mut self.mem[self.pc + 1],
-            Zpg => &mut self.mem[self.mem[self.pc + 1] as usize],
-            Abs => &mut self.mem[self.get_op_addr()],
-            Inx => &mut self.mem[self.get_mem_16((self.mem[self.pc + 1] + self.x) as usize)],
-            Iny => &mut self.mem[self.get_mem_16(self.mem[self.pc + 1] as usize) + self.y as usize], //fix me?
-            Zpx => &mut self.mem[self.pc + 1 + self.x as usize],
-            Aby => &mut self.mem[self.get_op_addr() + self.y as usize],
-            Abx => &mut self.mem[self.get_op_addr() + self.x as usize],
-            Acc => &mut self.a,
-            _ => panic!("Instruction mode doesn't target an address!"),
+        match OPCODES[self.mem[self.pc as usize] as usize].mode {
+            Imm(f) => f(self),
+            Zpg(f) => f(self),
+            Abs(f) => f(self),
+            Inx(f) => f(self),
+            Iny(f) => f(self),
+            Zpx(f) => f(self),
+            Aby(f) => f(self),
+            Abx(f) => f(self),
+            Acc(f) => f(self),
+            _ => panic!("Instruction mode doesn't target an Addess!"),
         }
+    }
+
+    #[inline(always)]
+    fn get_imm_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.pc as usize + 1]
+    }
+
+    #[inline(always)]
+    fn get_zpg_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.mem[self.pc as usize + 1] as usize]
+    }
+
+    #[inline(always)]
+    fn get_abs_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.get_op_add()]
+    }
+
+    #[inline(always)]
+    fn get_inx_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.get_mem_usize((self.mem[self.pc as usize + 1] + self.x) as usize)]
+    }
+
+    #[inline(always)]
+    fn get_iny_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.get_mem_usize(self.mem[self.pc as usize + 1] as usize) + self.y as usize] //fix me?
+    }
+
+    #[inline(always)]
+    fn get_zpx_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.pc as usize + 1 + self.x as usize]
+    }
+
+    #[inline(always)]
+    fn get_zpy_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.pc as usize + 1 + self.y as usize]
+    }
+
+    #[inline(always)]
+    fn get_abx_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.get_op_add() + self.x as usize]
+    }
+
+    #[inline(always)]
+    fn get_aby_add(&mut self) -> &mut u8 {
+        &mut self.mem[self.get_op_add() + self.y as usize]
+    }
+
+    #[inline(always)]
+    fn get_acc_add(&mut self) -> &mut u8 {
+        &mut self.a
     }
 
     #[inline(always)]
@@ -183,38 +236,33 @@ impl<'a> CPU {
         // let opcode = self.get_opcode();
 
         // match opcode.target {
-        //     Memm => self.get_eff_addr(),
+        //     Mem => self.get_eff_add(),
         //     _ => 0,
         // };
     }
 
     pub fn step(&mut self) {
-        let oc = self.get_opcode();
-        println!(
-            "{:>04X} {:>02X} -> {}: {:?}",
-            self.pc, oc.code, oc.mnemonic, oc.mode
-        );
+        let oc = &OPCODES[self.mem[self.pc as usize] as usize];
+        println!("{:>04X} {:>02X} -> {}", self.pc, oc.code, oc.mnemonic);
 
-        EMU_FUNCS[self.mem[self.pc] as usize](self);
-
-        self.pc += &OPCODES[self.mem[self.pc] as usize].length;
-        if self.pc > MAX_ADDR {
-            // fix me : wrap around or panic?
-            self.pc ^= 0xffff;
-        }
+        (oc.ef)(self); // call emu fn
+        self.pc += oc.length;
     }
+
     #[inline(always)]
     pub fn get_opcode(&self) -> &Opcode {
-        &OPCODES[self.mem[self.pc] as usize]
+        &OPCODES[self.mem[self.pc as usize] as usize]
     }
 
-    pub fn emu_not_impl(&mut self) {
+    pub fn emu_err(&mut self) {
         let o = self.get_opcode();
         panic!(format!(
             "Emulation for instruction {} not implemented!",
             o.mnemonic
         ));
     }
+
+    fn emu_nop(&mut self) {}
 
     fn emu_cld(&mut self) {
         self.status &= !(1 << (Status::D as u8));
@@ -225,49 +273,63 @@ impl<'a> CPU {
     }
 
     fn emu_jsr(&mut self) {
-        self.pc = self.get_op_addr();
+        let t = self.pc + 2;
+        self.mem[0x100 + self.sp as usize - 1] = t as u8;
+        self.mem[0x100 + self.sp as usize] = (t >> 8) as u8;
+        self.sp -= 2;
+
+        self.pc = u16::from(self.mem[self.pc as usize + 1])
+            | u16::from(self.mem[self.pc as usize + 2]) << 8
+    }
+
+    fn emu_rts(&mut self) {
+        self.sp += 2;
+        self.pc = u16::from(self.mem[0x100 + self.sp as usize - 1])
+            | ((u16::from(self.mem[0x100 + self.sp as usize]) << 8) + 1)
     }
 
     fn emu_sta(&mut self) {
-        self.a = self.get_op_8();
+        *self.get_eff_add() = self.a;
     }
 
     fn emu_ldy(&mut self) {
-        self.y = *self.get_eff_addr();
+        self.y = *self.get_eff_add();
         self.set_nz_reg(self.y);
     }
 
-    // fn emu_ror(&mut self) {
-    // let addr = self.get_eff_addr();
-    // self.status |= self.mem[addr] & 1;
-    // self.mem[addr] = self.status & ((Status::C as u8) << 7);
-    // }
+    fn emu_dey(&mut self) {
+        self.y -= 1;
+        self.set_nz_reg(self.y);
+    }
 
-    // fn test(&mut self) -> &u8 {
-    //     &mut self.y
-    // }
+    fn emu_lda(&mut self) {
+        self.a = *self.get_eff_add();
+        self.set_nz_reg(self.a);
+    }
 
     fn emu_ror(&mut self) {
+        // unecessary copying because the compiler is a little bitch
         let carry = self.status & ((Status::C as u8) << 7);
-        let addr = self.get_eff_addr();
-        let bit0 = *addr & 1;
-        *addr >>= 1;
-        *addr |= carry; // carry goes into bit 7
+        let add = self.get_eff_add();
+        let bit0 = *add & 1; // save bit0 before shifting
+        *add >>= 1;
+        *add |= carry; // carry goes into bit 7
         self.status |= bit0; // bit 0 goes into carry bit
     }
 
     fn emu_rol(&mut self) {
+        // ditto
         let carry = self.status & (Status::C as u8);
-        let addr = self.get_eff_addr();
-        let bit7 = *addr & (1 << 7);
-        *addr <<= 1;
-        *addr |= carry; // carry goes into bit 0
+        let add = self.get_eff_add();
+        let bit7 = *add & (1 << 7); // save bit7 before shifting
+        *add <<= 1;
+        *add |= carry; // carry goes into bit 0
         self.status |= bit7 >> 7; // bit 0 goes into carry bit
     }
 
     fn emu_bra(&mut self) {
         let status: bool;
-        match self.mem[self.pc] {
+        match self.mem[self.pc as usize] {
             0x10 => status = (self.status & (1 << Status::N as u8)) == 0,
             0x30 => status = (self.status & (1 << Status::N as u8)) != 0,
             0x50 => status = (self.status & (1 << Status::V as u8)) == 0,
@@ -279,7 +341,8 @@ impl<'a> CPU {
             _ => panic!("Encountered unknown branch opcode!"),
         }
         if status {
-            self.pc = 2 + ((self.pc as isize) + (self.mem[self.pc] as i8) as isize) as usize;
+            self.pc =
+                2 + ((self.pc as i16) + i16::from(self.mem[self.pc as usize + 1] as i8)) as u16;
         } else {
             self.pc += 2;
         }
@@ -290,274 +353,275 @@ impl<'a> CPU {
         self.push_8(self.status);
         self.pc = self.get_mem_16(0xfffe);
         self.status |= 1 << Status::B as u8;
+        // self.pc += 1;
     }
 }
 
 pub struct Opcode {
-    pub code:     i32, // the opcode
-    pub length:   usize,
+    pub code:     i32,          // the opcode
+    pub ef:       fn(&mut CPU), // the thing that gets the result
+    pub length:   u16,
     pub mode:     Modes,
-    pub target:   Regs, // the thing that gets the result
     pub mnemonic: &'static str,
 }
 
 // use cpu65::Modes::*;
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub const OPCODES: [Opcode; 256] = [
-Opcode { code: 0x00, length: 1, mode: Imp, target: Norg, mnemonic: "BRK", },
-Opcode { code: 0x01, length: 2, mode: Inx, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x02, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x03, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x04, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x05, length: 2, mode: Zpg, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x06, length: 2, mode: Zpg, target: Memm, mnemonic: "ASL", },
-Opcode { code: 0x07, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x08, length: 1, mode: Imp, target: Norg, mnemonic: "PHP", },
-Opcode { code: 0x09, length: 2, mode: Imm, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x0a, length: 1, mode: Acc, target: Areg, mnemonic: "ASL", },
-Opcode { code: 0x0b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x0c, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x0d, length: 3, mode: Abs, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x0e, length: 3, mode: Abs, target: Memm, mnemonic: "ASL", },
-Opcode { code: 0x0f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x10, length: 2, mode: Rel, target: Addr, mnemonic: "BPL", },
-Opcode { code: 0x11, length: 2, mode: Iny, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x12, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x13, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x14, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x15, length: 2, mode: Zpx, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x16, length: 2, mode: Zpx, target: Memm, mnemonic: "ASL", },
-Opcode { code: 0x17, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x18, length: 1, mode: Imp, target: Norg, mnemonic: "CLC", },
-Opcode { code: 0x19, length: 3, mode: Aby, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x1a, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x1b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x1c, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x1d, length: 3, mode: Abx, target: Areg, mnemonic: "ORA", },
-Opcode { code: 0x1e, length: 3, mode: Abx, target: Memm, mnemonic: "ASL", },
-Opcode { code: 0x1f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x20, length: 3, mode: Abs, target: Addr, mnemonic: "JSR", },
-Opcode { code: 0x21, length: 2, mode: Inx, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x22, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x23, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x24, length: 2, mode: Zpg, target: Memm, mnemonic: "BIT", },
-Opcode { code: 0x25, length: 2, mode: Zpg, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x26, length: 2, mode: Zpg, target: Memm, mnemonic: "ROL", },
-Opcode { code: 0x27, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x28, length: 1, mode: Imp, target: Norg, mnemonic: "PLP", },
-Opcode { code: 0x29, length: 2, mode: Imm, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x2a, length: 1, mode: Acc, target: Areg, mnemonic: "ROL", },
-Opcode { code: 0x2b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x2c, length: 3, mode: Abs, target: Memm, mnemonic: "BIT", },
-Opcode { code: 0x2d, length: 3, mode: Abs, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x2e, length: 3, mode: Abs, target: Memm, mnemonic: "ROL", },
-Opcode { code: 0x2f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x30, length: 2, mode: Rel, target: Addr, mnemonic: "BMI", },
-Opcode { code: 0x31, length: 2, mode: Iny, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x32, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x33, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x34, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x35, length: 2, mode: Zpx, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x36, length: 2, mode: Zpx, target: Memm, mnemonic: "ROL", },
-Opcode { code: 0x37, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x38, length: 1, mode: Imp, target: Norg, mnemonic: "SEC", },
-Opcode { code: 0x39, length: 3, mode: Aby, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x3a, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x3b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x3c, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x3d, length: 3, mode: Abx, target: Areg, mnemonic: "AND", },
-Opcode { code: 0x3e, length: 3, mode: Abx, target: Memm, mnemonic: "ROL", },
-Opcode { code: 0x3f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x40, length: 1, mode: Imp, target: Norg, mnemonic: "RTI", },
-Opcode { code: 0x41, length: 2, mode: Inx, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x42, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x43, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x44, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x45, length: 2, mode: Zpg, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x46, length: 2, mode: Zpg, target: Memm, mnemonic: "LSR", },
-Opcode { code: 0x47, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x48, length: 1, mode: Imp, target: Norg, mnemonic: "PHA", },
-Opcode { code: 0x49, length: 2, mode: Imm, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x4a, length: 1, mode: Acc, target: Areg, mnemonic: "LSR", },
-Opcode { code: 0x4b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x4c, length: 3, mode: Abs, target: Addr, mnemonic: "JMP", },
-Opcode { code: 0x4d, length: 3, mode: Abs, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x4e, length: 3, mode: Abs, target: Memm, mnemonic: "LSR", },
-Opcode { code: 0x4f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x50, length: 2, mode: Rel, target: Addr, mnemonic: "BVC", },
-Opcode { code: 0x51, length: 2, mode: Iny, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x52, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x53, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x54, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x55, length: 2, mode: Zpx, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x56, length: 2, mode: Zpx, target: Memm, mnemonic: "LSR", },
-Opcode { code: 0x57, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x58, length: 1, mode: Imp, target: Norg, mnemonic: "CLI", },
-Opcode { code: 0x59, length: 3, mode: Aby, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x5a, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x5b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x5c, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x5d, length: 3, mode: Abx, target: Areg, mnemonic: "EOR", },
-Opcode { code: 0x5e, length: 3, mode: Abx, target: Memm, mnemonic: "LSR", },
-Opcode { code: 0x5f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x60, length: 1, mode: Imp, target: Norg, mnemonic: "RTS", },
-Opcode { code: 0x61, length: 2, mode: Inx, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x62, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x63, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x64, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x65, length: 2, mode: Zpg, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x66, length: 2, mode: Zpg, target: Memm, mnemonic: "ROR", },
-Opcode { code: 0x67, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x68, length: 1, mode: Imp, target: Norg, mnemonic: "PLA", },
-Opcode { code: 0x69, length: 2, mode: Imm, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x6a, length: 1, mode: Acc, target: Areg, mnemonic: "ROR", },
-Opcode { code: 0x6b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x6c, length: 3, mode: Ind, target: Addr, mnemonic: "JMP", },
-Opcode { code: 0x6d, length: 3, mode: Abs, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x6e, length: 3, mode: Abs, target: Memm, mnemonic: "ROR", },
-Opcode { code: 0x6f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x70, length: 2, mode: Rel, target: Addr, mnemonic: "BVS", },
-Opcode { code: 0x71, length: 2, mode: Iny, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x72, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x73, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x74, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x75, length: 2, mode: Zpx, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x76, length: 2, mode: Zpx, target: Memm, mnemonic: "ROR", },
-Opcode { code: 0x77, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x78, length: 1, mode: Imp, target: Norg, mnemonic: "SEI", },
-Opcode { code: 0x79, length: 3, mode: Aby, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x7a, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x7b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x7c, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x7d, length: 3, mode: Abx, target: Areg, mnemonic: "ADC", },
-Opcode { code: 0x7e, length: 3, mode: Abx, target: Memm, mnemonic: "ROR", },
-Opcode { code: 0x7f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x80, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x81, length: 2, mode: Inx, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x82, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x83, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x84, length: 2, mode: Zpg, target: Memm, mnemonic: "STY", },
-Opcode { code: 0x85, length: 2, mode: Zpg, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x86, length: 2, mode: Zpg, target: Memm, mnemonic: "STX", },
-Opcode { code: 0x87, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x88, length: 1, mode: Imp, target: Yreg, mnemonic: "DEY", },
-Opcode { code: 0x89, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x8a, length: 1, mode: Imp, target: Areg, mnemonic: "TXA", },
-Opcode { code: 0x8b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x8c, length: 3, mode: Abs, target: Memm, mnemonic: "STY", },
-Opcode { code: 0x8d, length: 3, mode: Abs, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x8e, length: 3, mode: Abs, target: Memm, mnemonic: "STX", },
-Opcode { code: 0x8f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x90, length: 2, mode: Rel, target: Addr, mnemonic: "BCC", },
-Opcode { code: 0x91, length: 2, mode: Iny, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x92, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x93, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x94, length: 2, mode: Zpx, target: Memm, mnemonic: "STY", },
-Opcode { code: 0x95, length: 2, mode: Zpx, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x96, length: 2, mode: Zpy, target: Memm, mnemonic: "STX", },
-Opcode { code: 0x97, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x98, length: 1, mode: Imp, target: Areg, mnemonic: "TYA", },
-Opcode { code: 0x99, length: 3, mode: Aby, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x9a, length: 1, mode: Imp, target: Norg, mnemonic: "TXS", },
-Opcode { code: 0x9b, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x9c, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x9d, length: 3, mode: Abx, target: Memm, mnemonic: "STA", },
-Opcode { code: 0x9e, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0x9f, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xa0, length: 2, mode: Imm, target: Yreg, mnemonic: "LDY", },
-Opcode { code: 0xa1, length: 2, mode: Inx, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xa2, length: 2, mode: Imm, target: Xreg, mnemonic: "LDX", },
-Opcode { code: 0xa3, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xa4, length: 2, mode: Zpg, target: Yreg, mnemonic: "LDY", },
-Opcode { code: 0xa5, length: 2, mode: Zpg, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xa6, length: 2, mode: Zpg, target: Xreg, mnemonic: "LDX", },
-Opcode { code: 0xa7, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xa8, length: 1, mode: Imp, target: Yreg, mnemonic: "TAY", },
-Opcode { code: 0xa9, length: 2, mode: Imm, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xaa, length: 1, mode: Imp, target: Xreg, mnemonic: "TAX", },
-Opcode { code: 0xab, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xac, length: 3, mode: Abs, target: Yreg, mnemonic: "LDY", },
-Opcode { code: 0xad, length: 3, mode: Abs, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xae, length: 3, mode: Abs, target: Xreg, mnemonic: "LDX", },
-Opcode { code: 0xaf, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xb0, length: 2, mode: Rel, target: Addr, mnemonic: "BCS", },
-Opcode { code: 0xb1, length: 2, mode: Iny, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xb2, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xb3, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xb4, length: 2, mode: Zpx, target: Yreg, mnemonic: "LDY", },
-Opcode { code: 0xb5, length: 2, mode: Zpx, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xb6, length: 2, mode: Zpy, target: Xreg, mnemonic: "LDX", },
-Opcode { code: 0xb7, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xb8, length: 1, mode: Imp, target: Norg, mnemonic: "CLV", },
-Opcode { code: 0xb9, length: 3, mode: Aby, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xba, length: 1, mode: Imp, target: Norg, mnemonic: "TSX", },
-Opcode { code: 0xbb, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xbc, length: 3, mode: Abx, target: Yreg, mnemonic: "LDY", },
-Opcode { code: 0xbd, length: 3, mode: Abx, target: Areg, mnemonic: "LDA", },
-Opcode { code: 0xbe, length: 3, mode: Aby, target: Xreg, mnemonic: "LDX", },
-Opcode { code: 0xbf, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xc0, length: 2, mode: Imm, target: Norg, mnemonic: "CPY", },
-Opcode { code: 0xc1, length: 2, mode: Inx, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xc2, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xc3, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xc4, length: 2, mode: Zpg, target: Norg, mnemonic: "CPY", },
-Opcode { code: 0xc5, length: 2, mode: Zpg, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xc6, length: 2, mode: Zpg, target: Memm, mnemonic: "DEC", },
-Opcode { code: 0xc7, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xc8, length: 1, mode: Imp, target: Yreg, mnemonic: "INY", },
-Opcode { code: 0xc9, length: 2, mode: Imm, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xca, length: 1, mode: Imp, target: Xreg, mnemonic: "DEX", },
-Opcode { code: 0xcb, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xcc, length: 3, mode: Abs, target: Norg, mnemonic: "CPY", },
-Opcode { code: 0xcd, length: 3, mode: Abs, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xce, length: 3, mode: Abs, target: Memm, mnemonic: "DEC", },
-Opcode { code: 0xcf, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xd0, length: 2, mode: Rel, target: Addr, mnemonic: "BNE", },
-Opcode { code: 0xd1, length: 2, mode: Iny, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xd2, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xd3, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xd4, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xd5, length: 2, mode: Zpx, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xd6, length: 2, mode: Zpx, target: Memm, mnemonic: "DEC", },
-Opcode { code: 0xd7, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xd8, length: 1, mode: Imp, target: Norg, mnemonic: "CLD", },
-Opcode { code: 0xd9, length: 3, mode: Aby, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xda, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xdb, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xdc, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xdd, length: 3, mode: Abx, target: Norg, mnemonic: "CMP", },
-Opcode { code: 0xde, length: 3, mode: Abx, target: Memm, mnemonic: "DEC", },
-Opcode { code: 0xdf, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xe0, length: 2, mode: Imm, target: Norg, mnemonic: "CPX", },
-Opcode { code: 0xe1, length: 2, mode: Inx, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xe2, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xe3, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xe4, length: 2, mode: Zpg, target: Norg, mnemonic: "CPX", },
-Opcode { code: 0xe5, length: 2, mode: Zpg, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xe6, length: 2, mode: Zpg, target: Memm, mnemonic: "INC", },
-Opcode { code: 0xe7, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xe8, length: 1, mode: Imp, target: Xreg, mnemonic: "INX", },
-Opcode { code: 0xe9, length: 2, mode: Imm, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xea, length: 1, mode: Imp, target: Norg, mnemonic: "NOP", },
-Opcode { code: 0xeb, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xec, length: 3, mode: Abs, target: Norg, mnemonic: "CPX", },
-Opcode { code: 0xed, length: 3, mode: Abs, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xee, length: 3, mode: Abs, target: Memm, mnemonic: "INC", },
-Opcode { code: 0xef, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xf0, length: 2, mode: Rel, target: Addr, mnemonic: "BEQ", },
-Opcode { code: 0xf1, length: 2, mode: Iny, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xf2, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xf3, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xf4, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xf5, length: 2, mode: Zpx, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xf6, length: 2, mode: Zpx, target: Memm, mnemonic: "INC", },
-Opcode { code: 0xf7, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xf8, length: 1, mode: Imp, target: Norg, mnemonic: "SED", },
-Opcode { code: 0xf9, length: 3, mode: Aby, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xfa, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xfb, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xfc, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
-Opcode { code: 0xfd, length: 3, mode: Abx, target: Areg, mnemonic: "SBC", },
-Opcode { code: 0xfe, length: 3, mode: Abx, target: Memm, mnemonic: "INC", },
-Opcode { code: 0xff, length: 0, mode: Unk, target: Norg, mnemonic: "---", },
+Opcode { code: 0x00, ef: CPU::emu_brk, length: 1, mode: Imp, mnemonic: "BRK", },
+Opcode { code: 0x01, ef: CPU::emu_err, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "ORA", },
+Opcode { code: 0x02, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x03, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x04, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x05, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "ORA", },
+Opcode { code: 0x06, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "ASL", },
+Opcode { code: 0x07, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x08, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "PHP", },
+Opcode { code: 0x09, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "ORA", },
+Opcode { code: 0x0a, ef: CPU::emu_err, length: 1, mode: Acc(CPU::get_acc_add), mnemonic: "ASL", },
+Opcode { code: 0x0b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x0c, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x0d, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "ORA", },
+Opcode { code: 0x0e, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "ASL", },
+Opcode { code: 0x0f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x10, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BPL", },
+Opcode { code: 0x11, ef: CPU::emu_err, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "ORA", },
+Opcode { code: 0x12, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x13, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x14, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x15, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "ORA", },
+Opcode { code: 0x16, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "ASL", },
+Opcode { code: 0x17, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x18, ef: CPU::emu_clc, length: 1, mode: Imp, mnemonic: "CLC", },
+Opcode { code: 0x19, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "ORA", },
+Opcode { code: 0x1a, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x1b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x1c, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x1d, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "ORA", },
+Opcode { code: 0x1e, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "ASL", },
+Opcode { code: 0x1f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x20, ef: CPU::emu_jsr, length: 0, mode: Abs(CPU::get_abs_add), mnemonic: "JSR", },
+Opcode { code: 0x21, ef: CPU::emu_err, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "AND", },
+Opcode { code: 0x22, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x23, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x24, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "BIT", },
+Opcode { code: 0x25, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "AND", },
+Opcode { code: 0x26, ef: CPU::emu_rol, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "ROL", },
+Opcode { code: 0x27, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x28, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "PLP", },
+Opcode { code: 0x29, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "AND", },
+Opcode { code: 0x2a, ef: CPU::emu_rol, length: 1, mode: Acc(CPU::get_acc_add), mnemonic: "ROL", },
+Opcode { code: 0x2b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x2c, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "BIT", },
+Opcode { code: 0x2d, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "AND", },
+Opcode { code: 0x2e, ef: CPU::emu_rol, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "ROL", },
+Opcode { code: 0x2f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x30, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BMI", },
+Opcode { code: 0x31, ef: CPU::emu_err, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "AND", },
+Opcode { code: 0x32, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x33, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x34, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x35, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "AND", },
+Opcode { code: 0x36, ef: CPU::emu_rol, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "ROL", },
+Opcode { code: 0x37, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x38, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "SEC", },
+Opcode { code: 0x39, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "AND", },
+Opcode { code: 0x3a, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x3b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x3c, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x3d, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "AND", },
+Opcode { code: 0x3e, ef: CPU::emu_rol, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "ROL", },
+Opcode { code: 0x3f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x40, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "RTI", },
+Opcode { code: 0x41, ef: CPU::emu_err, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "EOR", },
+Opcode { code: 0x42, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x43, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x44, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x45, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "EOR", },
+Opcode { code: 0x46, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "LSR", },
+Opcode { code: 0x47, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x48, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "PHA", },
+Opcode { code: 0x49, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "EOR", },
+Opcode { code: 0x4a, ef: CPU::emu_err, length: 1, mode: Acc(CPU::get_acc_add), mnemonic: "LSR", },
+Opcode { code: 0x4b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x4c, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "JMP", },
+Opcode { code: 0x4d, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "EOR", },
+Opcode { code: 0x4e, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "LSR", },
+Opcode { code: 0x4f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x50, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BVC", },
+Opcode { code: 0x51, ef: CPU::emu_err, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "EOR", },
+Opcode { code: 0x52, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x53, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x54, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x55, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "EOR", },
+Opcode { code: 0x56, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "LSR", },
+Opcode { code: 0x57, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x58, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "CLI", },
+Opcode { code: 0x59, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "EOR", },
+Opcode { code: 0x5a, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x5b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x5c, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x5d, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "EOR", },
+Opcode { code: 0x5e, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "LSR", },
+Opcode { code: 0x5f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x60, ef: CPU::emu_rts, length: 1, mode: Imp, mnemonic: "RTS", },
+Opcode { code: 0x61, ef: CPU::emu_err, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "ADC", },
+Opcode { code: 0x62, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x63, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x64, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x65, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "ADC", },
+Opcode { code: 0x66, ef: CPU::emu_ror, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "ROR", },
+Opcode { code: 0x67, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x68, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "PLA", },
+Opcode { code: 0x69, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "ADC", },
+Opcode { code: 0x6a, ef: CPU::emu_ror, length: 1, mode: Acc(CPU::get_acc_add), mnemonic: "ROR", },
+Opcode { code: 0x6b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x6c, ef: CPU::emu_err, length: 3, mode: Ind, mnemonic: "JMP", },
+Opcode { code: 0x6d, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "ADC", },
+Opcode { code: 0x6e, ef: CPU::emu_ror, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "ROR", },
+Opcode { code: 0x6f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x70, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BVS", },
+Opcode { code: 0x71, ef: CPU::emu_err, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "ADC", },
+Opcode { code: 0x72, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x73, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x74, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x75, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "ADC", },
+Opcode { code: 0x76, ef: CPU::emu_ror, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "ROR", },
+Opcode { code: 0x77, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x78, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "SEI", },
+Opcode { code: 0x79, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "ADC", },
+Opcode { code: 0x7a, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x7b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x7c, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x7d, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "ADC", },
+Opcode { code: 0x7e, ef: CPU::emu_ror, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "ROR", },
+Opcode { code: 0x7f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x80, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x81, ef: CPU::emu_sta, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "STA", },
+Opcode { code: 0x82, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x83, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x84, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "STY", },
+Opcode { code: 0x85, ef: CPU::emu_sta, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "STA", },
+Opcode { code: 0x86, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "STX", },
+Opcode { code: 0x87, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x88, ef: CPU::emu_dey, length: 1, mode: Imp, mnemonic: "DEY", },
+Opcode { code: 0x89, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x8a, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "TXA", },
+Opcode { code: 0x8b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x8c, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "STY", },
+Opcode { code: 0x8d, ef: CPU::emu_sta, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "STA", },
+Opcode { code: 0x8e, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "STX", },
+Opcode { code: 0x8f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x90, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BCC", },
+Opcode { code: 0x91, ef: CPU::emu_sta, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "STA", },
+Opcode { code: 0x92, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x93, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x94, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "STY", },
+Opcode { code: 0x95, ef: CPU::emu_sta, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "STA", },
+Opcode { code: 0x96, ef: CPU::emu_err, length: 2, mode: Zpy(CPU::get_zpy_add), mnemonic: "STX", },
+Opcode { code: 0x97, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x98, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "TYA", },
+Opcode { code: 0x99, ef: CPU::emu_sta, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "STA", },
+Opcode { code: 0x9a, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "TXS", },
+Opcode { code: 0x9b, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x9c, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x9d, ef: CPU::emu_sta, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "STA", },
+Opcode { code: 0x9e, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0x9f, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xa0, ef: CPU::emu_ldy, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "LDY", },
+Opcode { code: 0xa1, ef: CPU::emu_lda, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "LDA", },
+Opcode { code: 0xa2, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "LDX", },
+Opcode { code: 0xa3, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xa4, ef: CPU::emu_ldy, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "LDY", },
+Opcode { code: 0xa5, ef: CPU::emu_lda, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "LDA", },
+Opcode { code: 0xa6, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "LDX", },
+Opcode { code: 0xa7, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xa8, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "TAY", },
+Opcode { code: 0xa9, ef: CPU::emu_lda, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "LDA", },
+Opcode { code: 0xaa, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "TAX", },
+Opcode { code: 0xab, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xac, ef: CPU::emu_ldy, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "LDY", },
+Opcode { code: 0xad, ef: CPU::emu_lda, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "LDA", },
+Opcode { code: 0xae, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "LDX", },
+Opcode { code: 0xaf, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xb0, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BCS", },
+Opcode { code: 0xb1, ef: CPU::emu_lda, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "LDA", },
+Opcode { code: 0xb2, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xb3, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xb4, ef: CPU::emu_ldy, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "LDY", },
+Opcode { code: 0xb5, ef: CPU::emu_lda, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "LDA", },
+Opcode { code: 0xb6, ef: CPU::emu_err, length: 2, mode: Zpy(CPU::get_zpy_add), mnemonic: "LDX", },
+Opcode { code: 0xb7, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xb8, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "CLV", },
+Opcode { code: 0xb9, ef: CPU::emu_lda, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "LDA", },
+Opcode { code: 0xba, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "TSX", },
+Opcode { code: 0xbb, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xbc, ef: CPU::emu_ldy, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "LDY", },
+Opcode { code: 0xbd, ef: CPU::emu_lda, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "LDA", },
+Opcode { code: 0xbe, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "LDX", },
+Opcode { code: 0xbf, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xc0, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "CPY", },
+Opcode { code: 0xc1, ef: CPU::emu_err, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "CMP", },
+Opcode { code: 0xc2, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xc3, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xc4, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "CPY", },
+Opcode { code: 0xc5, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "CMP", },
+Opcode { code: 0xc6, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "DEC", },
+Opcode { code: 0xc7, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xc8, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "INY", },
+Opcode { code: 0xc9, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "CMP", },
+Opcode { code: 0xca, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "DEX", },
+Opcode { code: 0xcb, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xcc, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "CPY", },
+Opcode { code: 0xcd, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "CMP", },
+Opcode { code: 0xce, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "DEC", },
+Opcode { code: 0xcf, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xd0, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BNE", },
+Opcode { code: 0xd1, ef: CPU::emu_err, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "CMP", },
+Opcode { code: 0xd2, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xd3, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xd4, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xd5, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "CMP", },
+Opcode { code: 0xd6, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "DEC", },
+Opcode { code: 0xd7, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xd8, ef: CPU::emu_cld, length: 1, mode: Imp, mnemonic: "CLD", },
+Opcode { code: 0xd9, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "CMP", },
+Opcode { code: 0xda, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xdb, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xdc, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xdd, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "CMP", },
+Opcode { code: 0xde, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "DEC", },
+Opcode { code: 0xdf, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xe0, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "CPX", },
+Opcode { code: 0xe1, ef: CPU::emu_err, length: 2, mode: Inx(CPU::get_inx_add), mnemonic: "SBC", },
+Opcode { code: 0xe2, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xe3, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xe4, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "CPX", },
+Opcode { code: 0xe5, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "SBC", },
+Opcode { code: 0xe6, ef: CPU::emu_err, length: 2, mode: Zpg(CPU::get_zpg_add), mnemonic: "INC", },
+Opcode { code: 0xe7, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xe8, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "INX", },
+Opcode { code: 0xe9, ef: CPU::emu_err, length: 2, mode: Imm(CPU::get_imm_add), mnemonic: "SBC", },
+Opcode { code: 0xea, ef: CPU::emu_nop, length: 1, mode: Imp, mnemonic: "NOP", },
+Opcode { code: 0xeb, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xec, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "CPX", },
+Opcode { code: 0xed, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "SBC", },
+Opcode { code: 0xee, ef: CPU::emu_err, length: 3, mode: Abs(CPU::get_abs_add), mnemonic: "INC", },
+Opcode { code: 0xef, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xf0, ef: CPU::emu_bra, length: 0, mode: Rel, mnemonic: "BEQ", },
+Opcode { code: 0xf1, ef: CPU::emu_err, length: 2, mode: Iny(CPU::get_iny_add), mnemonic: "SBC", },
+Opcode { code: 0xf2, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xf3, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xf4, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xf5, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "SBC", },
+Opcode { code: 0xf6, ef: CPU::emu_err, length: 2, mode: Zpx(CPU::get_zpx_add), mnemonic: "INC", },
+Opcode { code: 0xf7, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xf8, ef: CPU::emu_err, length: 1, mode: Imp, mnemonic: "SED", },
+Opcode { code: 0xf9, ef: CPU::emu_err, length: 3, mode: Aby(CPU::get_aby_add), mnemonic: "SBC", },
+Opcode { code: 0xfa, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xfb, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xfc, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
+Opcode { code: 0xfd, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "SBC", },
+Opcode { code: 0xfe, ef: CPU::emu_err, length: 3, mode: Abx(CPU::get_abx_add), mnemonic: "INC", },
+Opcode { code: 0xff, ef: CPU::emu_err, length: 0, mode: Unk, mnemonic: "---", },
 ];
