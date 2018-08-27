@@ -20,7 +20,7 @@ fn main() -> io::Result<()> {
     // let mem: [u8; cpu65::MEM_SIZE] = [0; cpu65::MEM_SIZE];
     let mut cpu = cpu65::CPU::new();
 
-    if cpu.load(buf) != true {
+    if cpu.load(&buf) != true {
         panic!("Load failed!");
     }
 
@@ -54,21 +54,6 @@ fn count_implemented() {
         }
     }
     println!("{} instructions implememnted!", c);
-
-    // for i in cpu65::OPCODES.iter().take(256) {
-    //     // match i.mode {
-    //     //     cpu65::Modes::Acc => acc &= i.code,
-    //     //     cpu65::Modes::Abs => abs &= i.code,
-    //     //     cpu65::Modes::Zpg => zpg &= i.code,
-    //     //     cpu65::Modes::Zpx => zpx &= i.code,
-    //     //     cpu65::Modes::Zpy => zpy &= i.code,
-    //     //     _ => {}
-    //     // }
-    //     println!(
-    //         "Opcode {{ code: 0x{:02x}, length: {}, mode: {:?}, ef: CPU::emu_not_impl, af: CPU::get_imm, mnemonic: \"{}\", }},",
-    //         i.code, i.length, i.mode, i.mnemonic
-    //     );
-    // }
 }
 
 fn read_program(fname: &str) -> Result<Vec<u8>, io::Error> {

@@ -2,7 +2,7 @@ cargo-features = ["edition"]
 
 [package]
 edition = '2018'
-name = "e65fe02"
+name = "fe_o2"
 version = "0.1.0"
 authors = ["opcow <mitch.crane@gmail.com>"]
 
