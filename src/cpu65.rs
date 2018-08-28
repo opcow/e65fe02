@@ -20,24 +20,68 @@ pub const A_REG: usize = 0x10000;
 pub const X_REG: usize = 0x10001;
 pub const Y_REG: usize = 0x10002;
 
+pub enum Op {
+    Op16(u16),
+    Op8(u8),
+    Noop,
+}
+
+pub struct TraceData {
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub pc: u16,
+    pub st: u8,
+    pub sp: u8,
+    pub oc: i32,
+    pub opl: u8,
+    pub oph: u8,
+    pub op: Op,
+    pub opstr: String,
+    pub mode: String,
+    pub instruction: String,
+    pub status: String,
+}
+
+impl TraceData {
+    pub fn new() -> TraceData {
+        TraceData {
+            a: 0,
+            x: 0,
+            y: 0,
+            pc: 0,
+            st: 0,
+            sp: 0,
+            oc: 0,
+            opl: 0,
+            oph: 0,
+            op: Op::Noop,
+            opstr: String::from("$00"),
+            mode: String::from("ERR"),
+            instruction: String::from("ERR"),
+            status: String::from("--------"),
+        }
+    }
+}
+
 //#[derive(Debug)]
 #[derive(Copy, Clone)]
 pub enum Modes {
+    Imm, // immediate mode
+    Abs, // absolute
+    Abx, // absolute x
+    Aby, // absolute y
     Inx, // indirect x
     Iny, // indirect y
     Zpg, // zero page
-    Imm, // immediate mode
-    Abs, // absolute
     Zpx, // zero page x
     Zpy, // zero page y
-    Aby, // absolute y
-    Abx, // absolute x
     Acc, // accumulator
     Ind, // indirect
     Rel, // relative
     Imp, // implied
     Unk,
-    Tst(fn(&mut CPU) -> &mut u8),
+    // Tst(fn(&mut CPU) -> &mut u8),
 }
 
 // the status register
@@ -143,11 +187,104 @@ impl<'a> CPU {
 
             let seg_beg = offset + 4;
             let seg_end = seg_beg + (end_add - start_add) + 1;
-            self.mem[start_add..end_add + 1].clone_from_slice(&buf[seg_beg..seg_end]);
+            self.mem[start_add..=end_add].clone_from_slice(&buf[seg_beg..seg_end]);
             offset = seg_end;
         }
         self.mem[0] = 0x40;
         true
+    }
+
+    pub fn trace(&mut self, td: &mut TraceData) {
+        let s1 = ['-', '-', '-', '-', '-', '-', '-', '-'];
+        let s2 = ['N', 'V', 'U', 'B', 'D', 'I', 'Z', 'C'];
+
+        let oc = &OPCODES[self.mem[self.pc as usize] as usize];
+
+        td.pc = self.pc;
+        td.st = self.status;
+        td.a = self.mem[A_REG];
+        td.x = self.mem[X_REG];
+        td.y = self.mem[Y_REG];
+
+        let mut bit = 1 << 7;
+        td.status.clear();
+        for i in 0..8 {
+            if td.st & bit != 0 {
+                td.status.push(s2[i]);
+            } else {
+                td.status.push(s1[i]);
+            }
+            bit >>= 1;
+        }
+        td.oc = oc.code;
+        td.opl = self.mem[self.pc as usize + 1];
+        td.oph = self.mem[self.pc as usize + 2];
+        match oc.ops {
+            2 => td.op = Op::Op16(self.get_op_16()),
+            1 => td.op = Op::Op8(self.get_op_8()),
+            _ => td.op = Op::Noop,
+        };
+
+        td.opstr = match oc.mode {
+            Imm => format!("#${:>02X}", self.mem[self.pc as usize + 1]),
+            Zpg => format!("${:>02X}", self.mem[self.pc as usize + 1]),
+            Zpx => format!("${:>02X},X", self.mem[self.pc as usize + 1]),
+            Zpy => format!("${:>02X},Y", self.mem[self.pc as usize + 1]),
+            Abs => format!(
+                "${:>02X}{:>02X}",
+                self.mem[self.pc as usize + 2],
+                self.mem[self.pc as usize + 1]
+            ),
+            Abx => format!(
+                "${:>02X}{:>02X},X",
+                self.mem[self.pc as usize + 2],
+                self.mem[self.pc as usize + 1]
+            ),
+            Aby => format!(
+                "${:>02X}{:>02X},Y",
+                self.mem[self.pc as usize + 2],
+                self.mem[self.pc as usize + 1]
+            ),
+            Ind => format!(
+                "(${:>02X}{:>02X})",
+                self.mem[self.pc as usize + 2],
+                self.mem[self.pc as usize + 1]
+            ),
+            Inx => format!("(${:>02X},X)", self.mem[self.pc as usize + 1]),
+            Iny => format!("(${:>02X}),Y", self.mem[self.pc as usize + 1]),
+            Acc => "A".to_string(),
+            Rel => format!(
+                "${:>04X}",
+                self.mem[self.pc as usize + 1] as i8 as isize + self.pc as isize + 2
+            ),
+            Imp => "".to_string(),
+            Unk => "---".to_string(),
+        };
+
+        td.mode = String::from(match oc.mode {
+            Imm => "IMM",
+            Zpg => "ZPG",
+            Abs => "ABS",
+            Inx => "INX",
+            Iny => "INY",
+            Zpx => "ZPX",
+            Zpy => "ZPY",
+            Abx => "ABX",
+            Aby => "ABY",
+            Acc => "ACC",
+            _ => "ERR",
+        });
+
+        td.instruction = String::from(oc.mnemonic);
+
+        (oc.ef)(self); // call emu fn
+        self.pc += oc.step;
+    }
+
+    pub fn step(&mut self) {
+        let oc = &OPCODES[self.mem[self.pc as usize] as usize];
+        (oc.ef)(self); // call emu fn
+        self.pc += oc.step;
     }
 
     #[inline(always)]
@@ -156,7 +293,7 @@ impl<'a> CPU {
     }
     #[inline(always)]
     fn get_op_16(&self) -> u16 {
-        (self.mem[self.pc as usize + 1] as u16) | (self.mem[self.pc as usize + 2] as u16) << 8
+        u16::from(self.mem[self.pc as usize + 1]) | u16::from(self.mem[self.pc as usize + 2]) << 8
     }
     #[inline(always)]
     fn get_op_8(&self) -> u8 {
@@ -165,7 +302,7 @@ impl<'a> CPU {
     #[inline(always)]
     fn get_mem_16(&self, a: usize) -> u16 {
         // let m16 = |m: &[u8], i: usize| (m[i] as usize) & (m[i + 1] as usize) << 8;
-        (self.mem[a] as u16) & (self.mem[a + 1] as u16) << 8
+        u16::from(self.mem[a]) & u16::from(self.mem[a + 1]) << 8
     }
 
     #[inline(always)]
@@ -176,8 +313,6 @@ impl<'a> CPU {
 
     fn get_eff_add(&self) -> usize {
         // fix me zero page wrapping
-        reg!(self, x);
-
         match OPCODES[self.mem[self.pc as usize] as usize].mode {
             Imm => self.pc as usize + 1,
             Zpg => self.mem[self.pc as usize + 1] as usize,
@@ -218,38 +353,6 @@ impl<'a> CPU {
         }
     }
 
-    pub fn fetch(&mut self) {
-        // let opcode = self.get_opcode();
-
-        // match opcode.target {
-        //     Mem => self.get_eff_add(),
-        //     _ => 0,
-        // };
-    }
-
-    pub fn step(&mut self) {
-        let oc = &OPCODES[self.mem[self.pc as usize] as usize];
-        unsafe {
-            static mut C: u32 = 1;
-            print!(
-                "{:04}:{:>04X} {:>02X} -> {}",
-                C, self.pc, oc.code, oc.mnemonic,
-            );
-            match oc.ops {
-                2 => println!(
-                    " {:>02X}{:>02X}",
-                    self.mem[self.pc as usize + 2],
-                    self.mem[self.pc as usize + 1]
-                ),
-                1 => println!(" {:>02X}", self.mem[self.pc as usize + 1]),
-                _ => println!(""),
-            };
-            C += 1;
-        }
-        (oc.ef)(self); // call emu fn
-        self.pc += oc.step;
-    }
-
     #[inline(always)]
     pub fn get_opcode(&self) -> &Opcode {
         &OPCODES[self.mem[self.pc as usize] as usize]
@@ -269,8 +372,32 @@ impl<'a> CPU {
         self.status &= !(1 << (Status::D as u8));
     }
 
+    fn emu_sed(&mut self) {
+        self.status |= 1 << (Status::D as u8);
+    }
+
     fn emu_clc(&mut self) {
         self.status &= !(1 << (Status::C as u8));
+    }
+
+    fn emu_sec(&mut self) {
+        self.status |= 1 << (Status::C as u8);
+    }
+
+    fn emu_clv(&mut self) {
+        self.status &= !(1 << (Status::V as u8));
+    }
+
+    fn emu_sev(&mut self) {
+        self.status |= 1 << (Status::V as u8);
+    }
+
+    fn emu_cli(&mut self) {
+        self.status &= !(1 << (Status::I as u8));
+    }
+
+    fn emu_sei(&mut self) {
+        self.status |= 1 << (Status::I as u8);
     }
 
     fn emu_jsr(&mut self) {
@@ -453,7 +580,7 @@ Opcode { code: 0x14, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "--
 Opcode { code: 0x15, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "ORA", },
 Opcode { code: 0x16, ef: CPU::emu_asl, step: 2, ops: 1, mode: Zpx, mnemonic: "ASL", },
 Opcode { code: 0x17, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0x18, ef: |c: &mut CPU| c.status &= !(1 << (Status::C as u8)), step: 1, ops: 0, mode: Imp, mnemonic: "CLC", },
+Opcode { code: 0x18, ef: CPU::emu_clc, step: 1, ops: 0, mode: Imp, mnemonic: "CLC", },
 Opcode { code: 0x19, ef: CPU::emu_err, step: 3, ops: 2, mode: Aby, mnemonic: "ORA", },
 Opcode { code: 0x1a, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0x1b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
@@ -485,7 +612,7 @@ Opcode { code: 0x34, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "--
 Opcode { code: 0x35, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "AND", },
 Opcode { code: 0x36, ef: CPU::emu_rol, step: 2, ops: 1, mode: Zpx, mnemonic: "ROL", },
 Opcode { code: 0x37, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0x38, ef: |c: &mut CPU| c.status |= 1 << (Status::C as u8), step: 1, ops: 0, mode: Imp, mnemonic: "SEC", },
+Opcode { code: 0x38, ef: CPU::emu_sec, step: 1, ops: 0, mode: Imp, mnemonic: "SEC", },
 Opcode { code: 0x39, ef: CPU::emu_err, step: 3, ops: 2, mode: Aby, mnemonic: "AND", },
 Opcode { code: 0x3a, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0x3b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
@@ -517,7 +644,7 @@ Opcode { code: 0x54, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "--
 Opcode { code: 0x55, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "EOR", },
 Opcode { code: 0x56, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "LSR", },
 Opcode { code: 0x57, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0x58, ef: |c: &mut CPU| c.status &= !(1 << (Status::I as u8)), step: 1, ops: 0, mode: Imp, mnemonic: "CLI", },
+Opcode { code: 0x58, ef: CPU::emu_cli, step: 1, ops: 0, mode: Imp, mnemonic: "CLI", },
 Opcode { code: 0x59, ef: CPU::emu_err, step: 3, ops: 2, mode: Aby, mnemonic: "EOR", },
 Opcode { code: 0x5a, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0x5b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
@@ -549,7 +676,7 @@ Opcode { code: 0x74, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "--
 Opcode { code: 0x75, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "ADC", },
 Opcode { code: 0x76, ef: CPU::emu_ror, step: 2, ops: 1, mode: Zpx, mnemonic: "ROR", },
 Opcode { code: 0x77, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0x78, ef: |c: &mut CPU| c.status |= 1 << (Status::C as u8), step: 1, ops: 0, mode: Imp, mnemonic: "SEI", },
+Opcode { code: 0x78, ef: CPU::emu_sei, step: 1, ops: 0, mode: Imp, mnemonic: "SEI", },
 Opcode { code: 0x79, ef: CPU::emu_err, step: 3, ops: 2, mode: Aby, mnemonic: "ADC", },
 Opcode { code: 0x7a, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0x7b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
@@ -613,7 +740,7 @@ Opcode { code: 0xb4, ef: CPU::emu_ldy, step: 2, ops: 1, mode: Zpx, mnemonic: "LD
 Opcode { code: 0xb5, ef: CPU::emu_lda, step: 2, ops: 1, mode: Zpx, mnemonic: "LDA", },
 Opcode { code: 0xb6, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpy, mnemonic: "LDX", },
 Opcode { code: 0xb7, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0xb8, ef: |c: &mut CPU| c.status &= !(1 << (Status::V as u8)), step: 1, ops: 0, mode: Imp, mnemonic: "CLV", },
+Opcode { code: 0xb8, ef: CPU::emu_clv, step: 1, ops: 0, mode: Imp, mnemonic: "CLV", },
 Opcode { code: 0xb9, ef: CPU::emu_lda, step: 3, ops: 2, mode: Aby, mnemonic: "LDA", },
 Opcode { code: 0xba, ef: CPU::emu_err, step: 1, ops: 0, mode: Imp, mnemonic: "TSX", },
 Opcode { code: 0xbb, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
@@ -645,7 +772,7 @@ Opcode { code: 0xd4, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "--
 Opcode { code: 0xd5, ef: CPU::emu_cmp, step: 2, ops: 1, mode: Zpx, mnemonic: "CMP", },
 Opcode { code: 0xd6, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "DEC", },
 Opcode { code: 0xd7, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0xd8, ef: |c: &mut CPU| c.status &= !(1 << (Status::D as u8)), step: 1, ops: 0, mode: Imp, mnemonic: "CLD", },
+Opcode { code: 0xd8, ef: CPU::emu_cld, step: 1, ops: 0, mode: Imp, mnemonic: "CLD", },
 Opcode { code: 0xd9, ef: CPU::emu_cmp, step: 3, ops: 2, mode: Aby, mnemonic: "CMP", },
 Opcode { code: 0xda, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0xdb, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
@@ -663,7 +790,7 @@ Opcode { code: 0xe6, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpg, mnemonic: "IN
 Opcode { code: 0xe7, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0xe8, ef: CPU::emu_err, step: 1, ops: 0, mode: Imp, mnemonic: "INX", },
 Opcode { code: 0xe9, ef: CPU::emu_sbc, step: 2, ops: 1, mode: Imm, mnemonic: "SBC", },
-Opcode { code: 0xea, ef: |_c: &mut CPU|{}, step: 1, ops: 0, mode: Imp, mnemonic: "NOP", },
+Opcode { code: 0xea, ef: CPU::emu_nop, step: 1, ops: 0, mode: Imp, mnemonic: "NOP", },
 Opcode { code: 0xeb, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0xec, ef: CPU::emu_err, step: 3, ops: 2, mode: Abs, mnemonic: "CPX", },
 Opcode { code: 0xed, ef: CPU::emu_sbc, step: 3, ops: 2, mode: Abs, mnemonic: "SBC", },
@@ -677,7 +804,7 @@ Opcode { code: 0xf4, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "--
 Opcode { code: 0xf5, ef: CPU::emu_sbc, step: 2, ops: 1, mode: Zpx, mnemonic: "SBC", },
 Opcode { code: 0xf6, ef: CPU::emu_err, step: 2, ops: 1, mode: Zpx, mnemonic: "INC", },
 Opcode { code: 0xf7, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
-Opcode { code: 0xf8, ef: |c: &mut CPU| c.status |= 1 << (Status::D as u8), step: 1, ops: 0, mode: Imp, mnemonic: "SED", },
+Opcode { code: 0xf8, ef: CPU::emu_sed, step: 1, ops: 0, mode: Imp, mnemonic: "SED", },
 Opcode { code: 0xf9, ef: CPU::emu_sbc, step: 3, ops: 2, mode: Aby, mnemonic: "SBC", },
 Opcode { code: 0xfa, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },
 Opcode { code: 0xfb, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, mnemonic: "---", },

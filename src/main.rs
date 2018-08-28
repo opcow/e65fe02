@@ -4,6 +4,7 @@
 mod cpu65;
 
 //use crate::cpu65::emu::EMU_FUNCS;
+use crate::cpu65::Op::*;
 use crate::cpu65::CPU;
 use crate::cpu65::OPCODES;
 use std::fs;
@@ -14,7 +15,7 @@ struct G {
 }
 
 fn main() -> io::Result<()> {
-    let fname = "mply3.com";
+    let fname = "a.bin";
     let buf = read_program(fname)?;
 
     // let mem: [u8; cpu65::MEM_SIZE] = [0; cpu65::MEM_SIZE];
@@ -32,9 +33,33 @@ fn main() -> io::Result<()> {
     }
     println!();
 
+    let mut td = cpu65::TraceData::new();
+
+    use std::{thread, time};
+
+    let delay = time::Duration::from_millis(250);
+
     cpu.set_pc(0x8000);
-    for _ in 0..500 {
-        cpu.step();
+    for i in 1..=10000 {
+        cpu.trace(&mut td);
+        if i != 2 && td.pc == 0x8001 {
+            break;
+        }
+        match td.op {
+            Op16(_o) => println!(
+                "{:04}:{:>04X} {} {:<10}{:>02X} {:>02X} {:>02X}  |{}| A={:>02X} X={:>02X} Y={:>02X}",
+                i, td.pc, td.instruction, td.opstr, td.oc, td.opl, td.oph, td.status, td.a, td.x, td.y
+            ),
+            _ => println!(
+                "{:04}:{:>04X} {} {:<10}{:>02X} {:>02X}     |{}| A={:>02X} X={:>02X} Y={:>02X}",
+                i, td.pc, td.instruction, td.opstr, td.oc, td.opl, td.status, td.a, td.x, td.y
+            ),
+            // _ => println!(
+            //     "{:04}:{:>04X} {}           {:>02X}",
+            //     i, td.pc, td.instruction, td.oc
+            // ),
+        };
+        //thread::sleep(delay);
     }
 
     // let fname = "mem.bin";
