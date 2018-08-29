@@ -193,7 +193,7 @@ impl<'a> CPU {
     }
     #[inline(always)]
     fn get_br_addr(&self, pc: isize) -> usize {
-        (self.mem[pc as usize + 1] as isize + pc as isize + 2) as usize
+        (self.mem[pc as usize + 1] as i8 as isize + pc as isize + 2) as usize
     }
     #[inline(always)]
     fn get_op_u8(&self) -> u8 {
