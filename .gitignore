@@ -3,5 +3,6 @@
 *.bin
 *.com
 *.7z
+*.65o
 out.txt
 .vscode

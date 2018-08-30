@@ -266,7 +266,7 @@ impl<'a> CPU {
         let mut pc: usize;
         let mut oc: &Opcode;
         let mut dest: usize;
-        println!(";;; disassembley ;;;\n");
+        println!(";;;;; disassembley ;;;;;\n");
         println!("    PROCESSOR 6502");
         println!("    LIST ON\n");
         for seg in &self.segs {
@@ -286,7 +286,16 @@ impl<'a> CPU {
                     }
                     println!("{:7}   {} LOC{:04X}", l, oc.mnemonic, dest);
                 } else {
-                    println!("{:7}   {}", l, oc.mnemonic);
+                    println!(
+                        "{:7}   {} {}",
+                        l,
+                        oc.mnemonic,
+                        get_format(
+                            oc.mode,
+                            pc,
+                            &self.mem[(pc as usize + 1)..=(pc as usize + 2)],
+                        )
+                    );
                 }
                 pc += oc.ops as usize + 1;
             }
@@ -362,38 +371,44 @@ impl<'a> CPU {
             _ => td.op = Op::Noop,
         };
 
-        td.opstr = match oc.mode {
-            Imm => format!("#${:>02X}", self.mem[self.pc as usize + 1]),
-            Zpg => format!("${:>02X}", self.mem[self.pc as usize + 1]),
-            Zpx => format!("${:>02X},X", self.mem[self.pc as usize + 1]),
-            Zpy => format!("${:>02X},Y", self.mem[self.pc as usize + 1]),
-            Abs => format!(
-                "${:>02X}{:>02X}",
-                self.mem[self.pc as usize + 2],
-                self.mem[self.pc as usize + 1]
-            ),
-            Abx => format!(
-                "${:>02X}{:>02X},X",
-                self.mem[self.pc as usize + 2],
-                self.mem[self.pc as usize + 1]
-            ),
-            Aby => format!(
-                "${:>02X}{:>02X},Y",
-                self.mem[self.pc as usize + 2],
-                self.mem[self.pc as usize + 1]
-            ),
-            Ind => format!(
-                "(${:>02X}{:>02X})",
-                self.mem[self.pc as usize + 2],
-                self.mem[self.pc as usize + 1]
-            ),
-            Inx => format!("(${:>02X},X)", self.mem[self.pc as usize + 1]),
-            Iny => format!("(${:>02X}),Y", self.mem[self.pc as usize + 1]),
-            Acc => "A".to_string(),
-            Rel => format!("${:>04X}", self.get_br_addr(self.pc as isize)),
-            Imp => "".to_string(),
-            Unk => "---".to_string(),
-        };
+        td.opstr = get_format(
+            oc.mode,
+            self.pc as usize,
+            &self.mem[(self.pc as usize + 1)..=(self.pc as usize + 2)],
+        );
+
+        // td.opstr = match oc.mode {
+        //     Imm => format!("#${:>02X}", self.mem[self.pc as usize + 1]),
+        //     Zpg => format!("${:>02X}", self.mem[self.pc as usize + 1]),
+        //     Zpx => format!("${:>02X},X", self.mem[self.pc as usize + 1]),
+        //     Zpy => format!("${:>02X},Y", self.mem[self.pc as usize + 1]),
+        //     Abs => format!(
+        //         "${:>02X}{:>02X}",
+        //         self.mem[self.pc as usize + 2],
+        //         self.mem[self.pc as usize + 1]
+        //     ),
+        //     Abx => format!(
+        //         "${:>02X}{:>02X},X",
+        //         self.mem[self.pc as usize + 2],
+        //         self.mem[self.pc as usize + 1]
+        //     ),
+        //     Aby => format!(
+        //         "${:>02X}{:>02X},Y",
+        //         self.mem[self.pc as usize + 2],
+        //         self.mem[self.pc as usize + 1]
+        //     ),
+        //     Ind => format!(
+        //         "(${:>02X}{:>02X})",
+        //         self.mem[self.pc as usize + 2],
+        //         self.mem[self.pc as usize + 1]
+        //     ),
+        //     Inx => format!("(${:>02X},X)", self.mem[self.pc as usize + 1]),
+        //     Iny => format!("(${:>02X}),Y", self.mem[self.pc as usize + 1]),
+        //     Acc => "A".to_string(),
+        //     Rel => format!("${:>04X}", self.get_br_addr(self.pc as isize)),
+        //     Imp => "".to_string(),
+        //     Unk => "---".to_string(),
+        // };
 
         td.mode = String::from(match oc.mode {
             Imm => "IMM",
@@ -658,6 +673,28 @@ pub struct Opcode {
     pub mode:     Modes,
     pub isbr:     bool,
     pub mnemonic: &'static str,
+}
+
+fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
+    match m {
+        Imm => format!("#${:>02X}", ops[0]),
+        Zpg => format!("${:>02X}", ops[0]),
+        Zpx => format!("${:>02X},X", ops[0]),
+        Zpy => format!("${:>02X},Y", ops[0]),
+        Abs => format!("${:>02X}{:>02X}", ops[1], ops[0]),
+        Abx => format!("${:>02X}{:>02X},X", ops[1], ops[0]),
+        Aby => format!("${:>02X}{:>02X},Y", ops[1], ops[0]),
+        Ind => format!("(${:>02X}{:>02X})", ops[1], ops[0]),
+        Inx => format!("(${:>02X},X)", ops[0]),
+        Iny => format!("(${:>02X}),Y", ops[0]),
+        Acc => "A".to_string(),
+        Rel => format!(
+            "${:>04X}",
+            (ops[0] as i8 as isize + addr as isize + 2) as usize
+        ),
+        Imp => "".to_string(),
+        Unk => "---".to_string(),
+    }
 }
 
 // use cpu65::Modes::*;
