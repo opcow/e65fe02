@@ -266,6 +266,8 @@ impl<'a> CPU {
         let mut pc: usize;
         let mut oc: &Opcode;
         let mut dest: usize;
+        let defstr = String::from("");
+
         println!(";;;;; disassembley ;;;;;\n");
         println!("    PROCESSOR 6502");
         println!("    LIST ON\n");
@@ -274,11 +276,7 @@ impl<'a> CPU {
             pc = seg.start;
             while pc <= seg.end {
                 oc = &OPCODES[self.mem[pc] as usize];
-                let l = match b.get(&pc) {
-                    Some(s) => String::clone(s),
-                    None => String::from(""),
-                    // None => format!("{:04X}", pc),
-                };
+                let l = b.get(&pc).unwrap_or(&defstr);
                 if oc.isbr {
                     match oc.mode {
                         Rel => dest = self.get_br_addr(pc as isize),
@@ -303,12 +301,16 @@ impl<'a> CPU {
         }
     }
 
-    pub fn trace(&mut self, start: u16, count: u32) {
+    pub fn trace(&mut self, start: u16, count: u32, pass2: bool) {
         let mut td = TraceData::new();
         let mut branches: HashMap<usize, String> = HashMap::new();
+        let defstr = String::from("");
 
         self.pass1(&mut branches);
-        self.pass2(&branches);
+        if pass2 {
+            self.pass2(&branches);
+            return;
+        }
         print!(";;;;;;;; begin trace ;;;;;;;;\n\n");
 
         use std::{thread, time};
@@ -321,10 +323,7 @@ impl<'a> CPU {
                 break;
             }
 
-            let l = match branches.get(&td.pc) {
-                Some(s) => s,
-                None => "",
-            };
+            let l = branches.get(&td.pc).unwrap_or(&defstr);
 
             match td.op {
             Op16(_o) => println!(
@@ -376,39 +375,6 @@ impl<'a> CPU {
             self.pc as usize,
             &self.mem[(self.pc as usize + 1)..=(self.pc as usize + 2)],
         );
-
-        // td.opstr = match oc.mode {
-        //     Imm => format!("#${:>02X}", self.mem[self.pc as usize + 1]),
-        //     Zpg => format!("${:>02X}", self.mem[self.pc as usize + 1]),
-        //     Zpx => format!("${:>02X},X", self.mem[self.pc as usize + 1]),
-        //     Zpy => format!("${:>02X},Y", self.mem[self.pc as usize + 1]),
-        //     Abs => format!(
-        //         "${:>02X}{:>02X}",
-        //         self.mem[self.pc as usize + 2],
-        //         self.mem[self.pc as usize + 1]
-        //     ),
-        //     Abx => format!(
-        //         "${:>02X}{:>02X},X",
-        //         self.mem[self.pc as usize + 2],
-        //         self.mem[self.pc as usize + 1]
-        //     ),
-        //     Aby => format!(
-        //         "${:>02X}{:>02X},Y",
-        //         self.mem[self.pc as usize + 2],
-        //         self.mem[self.pc as usize + 1]
-        //     ),
-        //     Ind => format!(
-        //         "(${:>02X}{:>02X})",
-        //         self.mem[self.pc as usize + 2],
-        //         self.mem[self.pc as usize + 1]
-        //     ),
-        //     Inx => format!("(${:>02X},X)", self.mem[self.pc as usize + 1]),
-        //     Iny => format!("(${:>02X}),Y", self.mem[self.pc as usize + 1]),
-        //     Acc => "A".to_string(),
-        //     Rel => format!("${:>04X}", self.get_br_addr(self.pc as isize)),
-        //     Imp => "".to_string(),
-        //     Unk => "---".to_string(),
-        // };
 
         td.mode = String::from(match oc.mode {
             Imm => "IMM",
