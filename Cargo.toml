@@ -8,3 +8,4 @@ authors = ["opcow <mitch.crane@gmail.com>"]
 
 [dependencies]
 clap = "2.32.0"
+lazy_static = "1.1.0"

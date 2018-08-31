@@ -3,6 +3,25 @@
 use crate::cpu65::Modes::*;
 use crate::cpu65::Op::*;
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+// #[macro_use]
+// extern crate lazy_static;
+
+lazy_static! {
+    static ref BRAMAP: Mutex<HashMap<usize, String>> = {
+        let m = HashMap::new();
+        Mutex::new(m)
+    };
+
+    // static ref HASHMAP: Mutex<HashMap<u32, &'static str>> = {
+    //     let mut m = HashMap::new();
+    //     m.insert(0, "foo");
+    //     m.insert(1, "bar");
+    //     m.insert(2, "baz");
+    //     Mutex::new(m)
+    // };
+}
 
 macro_rules! reg {
     ($sel:ident, a) => {
@@ -16,11 +35,11 @@ macro_rules! reg {
     };
 }
 
-pub const MAX_ADD: usize = 0xffff;
-pub const MEM_SIZE: usize = MAX_ADD + 6; // registers stored in array
-pub const A_REG: usize = 0x10000;
-pub const X_REG: usize = 0x10001;
-pub const Y_REG: usize = 0x10002;
+const MAX_ADD: usize = 0xffff;
+const MEM_SIZE: usize = MAX_ADD + 6; // registers stored in array
+const A_REG: usize = 0x10000;
+const X_REG: usize = 0x10001;
+const Y_REG: usize = 0x10002;
 
 pub enum Op {
     Op16(u16),
@@ -29,25 +48,26 @@ pub enum Op {
 }
 
 pub struct TraceData {
-    pub a: u8,
-    pub x: u8,
-    pub y: u8,
-    pub pc: usize,
-    pub st: u8,
-    pub sp: u8,
-    pub oc: i32,
-    pub opl: u8,
-    pub oph: u8,
-    pub op: Op,
-    pub opstr: String,
-    pub mode: String,
-    pub instruction: String,
-    pub status: String,
-    pub label: String,
+    a: u8,
+    x: u8,
+    y: u8,
+    pc: usize,
+    st: u8,
+    sp: u8,
+    oc: i32,
+    opl: u8,
+    oph: u8,
+    op: Op,
+    opstr: String,
+    mode: String,
+    instruction: String,
+    status: String,
+    label: String,
+    has_first_pass: bool,
 }
 
 impl TraceData {
-    pub fn new() -> TraceData {
+    fn new() -> TraceData {
         TraceData {
             a: 0,
             x: 0,
@@ -64,6 +84,7 @@ impl TraceData {
             instruction: String::from("ERR"),
             status: String::from("--------"),
             label: String::from(""),
+            has_first_pass: false,
         }
     }
 }
@@ -236,10 +257,11 @@ impl<'a> CPU {
         true
     }
 
-    fn pass1(&self, b: &mut HashMap<usize, String>) {
+    fn pass1(&self) {
         let mut pc: usize;
         let mut oc: &Opcode;
         let mut dest: usize;
+        let mut b = BRAMAP.lock().unwrap();
 
         for seg in &self.segs {
             pc = seg.start;
@@ -262,15 +284,18 @@ impl<'a> CPU {
         }
     }
 
-    fn pass2(&self, b: &HashMap<usize, String>) {
+    pub fn disasm(&self) {
         let mut pc: usize;
         let mut oc: &Opcode;
         let mut dest: usize;
         let defstr = String::from("");
 
-        println!(";;;;; disassembley ;;;;;\n");
+        println!(";;; begin disassembley ;;;\n");
         println!("    PROCESSOR 6502");
         println!("    LIST ON\n");
+
+        let b = BRAMAP.lock().unwrap();
+
         for seg in &self.segs {
             println!("        .ORG ${:04X}", seg.start);
             pc = seg.start;
@@ -301,17 +326,16 @@ impl<'a> CPU {
         }
     }
 
-    pub fn trace(&mut self, start: u16, count: u32, pass2: bool) {
+    pub fn trace(&mut self, start: u16, count: u32) {
         let mut td = TraceData::new();
-        let mut branches: HashMap<usize, String> = HashMap::new();
         let defstr = String::from("");
 
-        self.pass1(&mut branches);
-        if pass2 {
-            self.pass2(&branches);
-            return;
+        if !td.has_first_pass {
+            self.pass1()
         }
-        print!(";;;;;;;; begin trace ;;;;;;;;\n\n");
+        let b = BRAMAP.lock().unwrap();
+
+        print!(";;;;;; begin trace ;;;;;;\n\n");
 
         use std::{thread, time};
         let delay = time::Duration::from_millis(200);
@@ -323,7 +347,7 @@ impl<'a> CPU {
                 break;
             }
 
-            let l = branches.get(&td.pc).unwrap_or(&defstr);
+            let l = b.get(&td.pc).unwrap_or(&defstr);
 
             match td.op {
             Op16(_o) => println!(
@@ -614,19 +638,6 @@ impl<'a> CPU {
         self.push_8(self.status);
         self.pc = self.get_mem_16(0xfffe);
         self.status |= 1 << Status::B as u8;
-    }
-}
-
-const DECODE_ZPG: fn(usize, &mut [u8; 0x10000]) -> &mut u8 =
-    |pc: usize, m: &mut [u8; 0x10000]| &mut m[m[pc as usize + 1] as usize];
-
-struct Instrs {
-    op: [Opcode; 256],
-}
-
-impl<'a> Instrs {
-    pub fn new() -> Instrs {
-        Instrs { op: OPCODES }
     }
 }
 

@@ -1,5 +1,8 @@
-//#![feature(rust_2018_preview)]
 #![allow(dead_code)]
+#[macro_use]
+extern crate lazy_static;
+
+//#![feature(rust_2018_preview)]
 
 mod cpu65;
 
@@ -30,10 +33,17 @@ fn main() -> io::Result<()> {
                 .multiple(false)
                 .help("Disassemble the binary"),
         ).arg(
+            Arg::with_name("trace")
+                .short("t")
+                .long("trace")
+                .multiple(false)
+                .help("Trace execution of the binary"),
+        ).arg(
             Arg::with_name("steps")
                 .short("s")
                 .long("steps")
                 .takes_value(true)
+                .requires("trace")
                 .help("Positive interger: number of steps to trace"),
         ).get_matches();
 
@@ -41,7 +51,7 @@ fn main() -> io::Result<()> {
         .value_of("steps")
         .unwrap_or("5")
         .parse::<u32>()
-        .unwrap();
+        .unwrap_or(5);
 
     let fname = matches.value_of("ifile").unwrap();
 
@@ -57,7 +67,12 @@ fn main() -> io::Result<()> {
 
     println!();
 
-    cpu.trace(0x8000, steps, matches.is_present("disassemble"));
+    if matches.is_present("disassemble") {
+        cpu.disasm();
+    }
+    if matches.is_present("trace") {
+        cpu.trace(0x8000, steps);
+    }
 
     // let fname = "mem.bin";
     // fs::write(fname, &cpu.get_mem()[..])?;
