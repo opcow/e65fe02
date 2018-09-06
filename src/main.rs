@@ -1,12 +1,15 @@
+#![feature(rust_2018_preview)]
 #![allow(dead_code)]
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate clap;
 
 //#![feature(rust_2018_preview)]
 
 mod cpu65;
+mod disasm;
 
-extern crate clap;
 use clap::{App, Arg};
 use crate::cpu65::CPU;
 use crate::cpu65::OPCODES;
@@ -15,28 +18,31 @@ use std::io;
 
 fn main() -> io::Result<()> {
     let matches = App::new("fe02")
-        .version("0.1")
+        .version(crate_version!())
         .about("NMOS 6502 emulator")
-        .author("Mitch Crane")
+        .author(crate_authors!())
         .arg(
             Arg::with_name("ifile")
-                .short("i")
-                .long("input")
+                // .short("i")
+                // .long("input")
                 .value_name("INFILE")
                 .takes_value(true)
                 .required(true)
+                .index(1)
                 .help("Sets the binary file to read"),
         ).arg(
             Arg::with_name("disassemble")
                 .short("d")
-                .long("disassemble")
                 .multiple(false)
+                .conflicts_with("trace")
+                // .required(true)
                 .help("Disassemble the binary"),
         ).arg(
             Arg::with_name("trace")
                 .short("t")
-                .long("trace")
                 .multiple(false)
+                .conflicts_with("disassemble")
+                // .required(true)
                 .help("Trace execution of the binary"),
         ).arg(
             Arg::with_name("steps")
@@ -59,21 +65,26 @@ fn main() -> io::Result<()> {
 
     let mut cpu = cpu65::CPU::new();
 
-    if cpu.load(&buf) != true {
-        panic!("Load failed!");
-    }
+    let segs = cpu.load(&buf)?;
 
     count_implemented();
 
     println!();
 
     if matches.is_present("disassemble") {
-        cpu.disasm();
+        println!(";;; begin disassembley ;;;\n");
+        println!("    PROCESSOR 6502");
+        println!("    LIST ON\n");
+
+        for seg in &segs {
+            disasm::first_pass(&cpu, seg.start, seg.end);
+            disasm::disasm(&cpu, seg.start, seg.end);
+        }
     }
     if matches.is_present("trace") {
-        cpu.trace(0x8000, steps);
+        let start = segs[0].start as u16;
+        disasm::trace(&mut cpu, start, steps);
     }
-
     // let fname = "mem.bin";
     // fs::write(fname, &cpu.get_mem()[..])?;
 
@@ -83,14 +94,11 @@ fn main() -> io::Result<()> {
 fn count_implemented() {
     // count implemented
     let n = CPU::emu_err as *const fn(&mut CPU);
-    let mut c = 0;
-    for i in OPCODES.iter().take(256) {
-        //        let f = EMU_FUNCS[i] as usize;
-        if i.ef as *const fn(&mut CPU) != n {
-            c += 1;
-        }
-    }
-    println!("{} instructions implememnted!", c);
+    let k = OPCODES
+        .iter()
+        .filter(|f| f.ef as *const fn(&mut CPU) != n)
+        .count();
+    println!("{} instructions implememnted!", k);
 }
 
 fn read_program(fname: &str) -> Result<Vec<u8>, io::Error> {

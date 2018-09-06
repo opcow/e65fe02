@@ -1,39 +1,27 @@
-// use crate::cpu65::emu::EMU_FUNCS;
-//use crate::cpu65::emu::EMU_FUNCS;
 use crate::cpu65::Modes::*;
-use crate::cpu65::Op::*;
 use std::collections::HashMap;
+use std::io;
+use std::io::{Error, ErrorKind};
 use std::sync::Mutex;
-
-// #[macro_use]
-// extern crate lazy_static;
 
 lazy_static! {
     static ref BRAMAP: Mutex<HashMap<usize, String>> = {
         let m = HashMap::new();
         Mutex::new(m)
     };
-
-    // static ref HASHMAP: Mutex<HashMap<u32, &'static str>> = {
-    //     let mut m = HashMap::new();
-    //     m.insert(0, "foo");
-    //     m.insert(1, "bar");
-    //     m.insert(2, "baz");
-    //     Mutex::new(m)
-    // };
 }
 
-macro_rules! reg {
-    ($sel:ident, a) => {
-        $sel.mem[0x10000]
-    };
-    ($sel:ident, x) => {
-        $sel.mem[0x10001]
-    };
-    ($sel:ident, y) => {
-        $sel.mem[0x10002]
-    };
-}
+// macro_rules! reg {
+//     ($sel:ident, a) => {
+//         $sel.mem[0x10000]
+//     };
+//     ($sel:ident, x) => {
+//         $sel.mem[0x10001]
+//     };
+//     ($sel:ident, y) => {
+//         $sel.mem[0x10002]
+//     };
+// }
 
 const MAX_ADD: usize = 0xffff;
 const MEM_SIZE: usize = MAX_ADD + 6; // registers stored in array
@@ -89,9 +77,9 @@ impl TraceData {
     }
 }
 
-struct Segment {
-    start: usize,
-    end:   usize,
+pub struct Segment {
+    pub start: usize,
+    pub end:   usize,
 }
 
 //#[derive(Debug)]
@@ -131,12 +119,12 @@ pub struct CPU {
     // a:      usize,
     // x:      usize,
     // y:      usize,
-    status: u8,
-    sp:     u8,
-    pc:     u16,
-    mem:    [u8; MEM_SIZE],
-    ins:    [Opcode; 256],
-    segs:   Vec<Segment>,
+    pub status: u8,
+    pub sp:     u8,
+    pub pc:     u16,
+    mem:        [u8; MEM_SIZE],
+    pub ins:    [Opcode; 256],
+    // pub segs:   Vec<Segment>,
 }
 
 // use std::fmt;
@@ -160,7 +148,7 @@ impl<'a> CPU {
             pc:     0,
             mem:    [0; MEM_SIZE],
             ins:    OPCODES,
-            segs:   Vec::new(),
+            // segs:   Vec::new(),
         }
     }
 
@@ -197,6 +185,10 @@ impl<'a> CPU {
         self.pc = pc;
     }
 
+    pub fn get_pc(&self) -> usize {
+        self.pc as usize
+    }
+
     pub fn get_mem_mut(&mut self) -> &mut [u8] {
         &mut self.mem
     }
@@ -213,7 +205,8 @@ impl<'a> CPU {
         u16::from(self.mem[self.pc as usize + 1]) | u16::from(self.mem[self.pc as usize + 2]) << 8
     }
     #[inline(always)]
-    fn get_br_addr(&self, pc: isize) -> usize {
+    // gets the absolute address of a relative branch
+    pub fn get_br_addr(&self, pc: isize) -> usize {
         (self.mem[pc as usize + 1] as i8 as isize + pc as isize + 2) as usize
     }
     #[inline(always)]
@@ -226,15 +219,15 @@ impl<'a> CPU {
         u16::from(self.mem[a]) & u16::from(self.mem[a + 1]) << 8
     }
 
-    //#[inline(always)]
-    fn get_mem_usize(&self, a: usize) -> usize {
-        // let m16 = |m: &[u8], i: usize| (m[i] as usize) & (m[i + 1] as usize) << 8;
+    #[inline(always)]
+    pub fn get_mem_usize(&self, a: usize) -> usize {
         self.mem[a] as usize | (self.mem[a + 1] as usize) << 8
     }
 
-    pub fn load(&mut self, buf: &[u8]) -> bool {
+    pub fn load(&mut self, buf: &[u8]) -> Result<Vec<Segment>, io::Error> {
         let mut start_add: usize;
         let mut end_add: usize;
+        let mut segs: Vec<Segment> = Vec::new();
 
         let mut offset = 2; // skip the header
         while offset < buf.len() {
@@ -242,186 +235,23 @@ impl<'a> CPU {
             end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
 
             if start_add > 0xfffc || end_add > 0xffff || end_add < start_add + 2 {
-                return false;
+                return Err(Error::new(ErrorKind::Other, "Input file is a directory!"));
             }
 
             let seg_beg = offset + 4;
             let seg_end = seg_beg + (end_add - start_add) + 1;
-            self.segs.push(Segment {
+            segs.push(Segment {
                 start: start_add,
                 end:   end_add,
             });
             self.mem[start_add..=end_add].clone_from_slice(&buf[seg_beg..seg_end]);
             offset = seg_end;
         }
-        true
+        Ok(segs)
     }
 
-    fn pass1(&self) {
-        let mut pc: usize;
-        let mut oc: &Opcode;
-        let mut dest: usize;
-        let mut b = BRAMAP.lock().unwrap();
-
-        for seg in &self.segs {
-            pc = seg.start;
-            while pc <= seg.end {
-                oc = &OPCODES[self.mem[pc] as usize];
-                if oc.isbr {
-                    match oc.mode {
-                        Rel => {
-                            dest = self.get_br_addr(pc as isize);
-                            b.insert(dest, format!("LOC{:04X}", dest));
-                        }
-                        _ => {
-                            dest = self.get_mem_usize(pc + 1);
-                            b.insert(dest, format!("LOC{:04X}", dest));
-                        }
-                    }
-                }
-                pc += oc.ops as usize + 1;
-            }
-        }
-    }
-
-    pub fn disasm(&self) {
-        let mut pc: usize;
-        let mut oc: &Opcode;
-        let mut dest: usize;
-        let defstr = String::from("");
-
-        println!(";;; begin disassembley ;;;\n");
-        println!("    PROCESSOR 6502");
-        println!("    LIST ON\n");
-
-        let b = BRAMAP.lock().unwrap();
-
-        for seg in &self.segs {
-            println!("        .ORG ${:04X}", seg.start);
-            pc = seg.start;
-            while pc <= seg.end {
-                oc = &OPCODES[self.mem[pc] as usize];
-                let l = b.get(&pc).unwrap_or(&defstr);
-                if oc.isbr {
-                    match oc.mode {
-                        Rel => dest = self.get_br_addr(pc as isize),
-                        _ => dest = self.get_mem_usize(pc + 1),
-                    }
-                    println!("{:7}   {} LOC{:04X}", l, oc.mnemonic, dest);
-                } else {
-                    println!(
-                        "{:7}   {} {}",
-                        l,
-                        oc.mnemonic,
-                        get_format(
-                            oc.mode,
-                            pc,
-                            &self.mem[(pc as usize + 1)..=(pc as usize + 2)],
-                        )
-                    );
-                }
-                pc += oc.ops as usize + 1;
-            }
-            print!("\n");
-        }
-    }
-
-    pub fn trace(&mut self, start: u16, count: u32) {
-        let mut td = TraceData::new();
-        let defstr = String::from("");
-
-        if !td.has_first_pass {
-            self.pass1()
-        }
-        let b = BRAMAP.lock().unwrap();
-
-        print!(";;;;;; begin trace ;;;;;;\n\n");
-
-        use std::{thread, time};
-        let delay = time::Duration::from_millis(200);
-
-        self.set_pc(start);
-        for i in 1..=count {
-            self.trace_step(&mut td);
-            if i != 2 && td.pc == 0x8001 {
-                break;
-            }
-
-            let l = b.get(&td.pc).unwrap_or(&defstr);
-
-            match td.op {
-            Op16(_o) => println!(
-                "{:8} {:04}:{:>04X} {} {:<10}{:>02X} {:>02X} {:>02X}  |{}| A={:>02X} X={:>02X} Y={:>02X}",
-                l, i, td.pc, td.instruction, td.opstr, td.oc, td.opl, td.oph, td.status, td.a, td.x, td.y
-            ),
-            _ => println!(
-                "{:8} {:04}:{:>04X} {} {:<10}{:>02X} {:>02X}     |{}| A={:>02X} X={:>02X} Y={:>02X}",
-                l, i, td.pc, td.instruction, td.opstr, td.oc, td.opl, td.status, td.a, td.x, td.y
-            ),
-        };
-            thread::sleep(delay);
-        }
-    }
-
-    pub fn trace_step(&mut self, td: &mut TraceData) {
-        let s1 = ['-', '-', '-', '-', '-', '-', '-', '-'];
-        let s2 = ['N', 'V', 'U', 'B', 'D', 'I', 'Z', 'C'];
-
-        let oc = &OPCODES[self.mem[self.pc as usize] as usize];
-
-        td.pc = self.pc as usize;
-        td.st = self.status;
-        td.a = self.mem[A_REG];
-        td.x = self.mem[X_REG];
-        td.y = self.mem[Y_REG];
-
-        let mut bit = 1 << 7;
-        td.status.clear();
-        for i in 0..8 {
-            if td.st & bit != 0 {
-                td.status.push(s2[i]);
-            } else {
-                td.status.push(s1[i]);
-            }
-            bit >>= 1;
-        }
-        td.oc = oc.code;
-        td.opl = self.mem[self.pc as usize + 1];
-        td.oph = self.mem[self.pc as usize + 2];
-        match oc.ops {
-            2 => td.op = Op::Op16(self.get_op_16()),
-            1 => td.op = Op::Op8(self.get_op_u8()),
-            _ => td.op = Op::Noop,
-        };
-
-        td.opstr = get_format(
-            oc.mode,
-            self.pc as usize,
-            &self.mem[(self.pc as usize + 1)..=(self.pc as usize + 2)],
-        );
-
-        td.mode = String::from(match oc.mode {
-            Imm => "IMM",
-            Zpg => "ZPG",
-            Abs => "ABS",
-            Inx => "INX",
-            Iny => "INY",
-            Zpx => "ZPX",
-            Zpy => "ZPY",
-            Abx => "ABX",
-            Aby => "ABY",
-            Acc => "ACC",
-            _ => "ERR",
-        });
-
-        td.instruction = String::from(oc.mnemonic);
-
-        (oc.ef)(self); // call emu fn
-        self.pc += oc.step;
-    }
-
-    pub fn step(&mut self) {
-        let oc = &OPCODES[self.mem[self.pc as usize] as usize];
+    pub fn step(&mut self, oc: &Opcode) {
+        // let oc = &OPCODES[self.mem[self.pc as usize] as usize];
         (oc.ef)(self); // call emu fn
         self.pc += oc.step;
     }
@@ -436,18 +266,19 @@ impl<'a> CPU {
                     | (self.mem[self.pc as usize + 2] as usize) << 8
             }
             Inx => {
-                (self.mem[(self.mem[self.pc as usize + 1] + reg!(self, x)) as usize] as usize)
-                    & (self.mem[(self.mem[self.pc as usize + 1] + reg!(self, x)) as usize + 1]
+                (self.mem[(self.mem[self.pc as usize + 1] + self.mem[X_REG]) as usize] as usize)
+                    & (self.mem[(self.mem[self.pc as usize + 1] + self.mem[X_REG]) as usize + 1]
                         as usize)
                         << 8
             }
             Iny => {
-                self.get_mem_usize(self.mem[self.pc as usize + 1] as usize) + reg!(self, y) as usize
+                self.get_mem_usize(self.mem[self.pc as usize + 1] as usize)
+                    + self.mem[Y_REG] as usize
             }
-            Zpx => (self.mem[self.pc as usize + 1]).wrapping_add(reg!(self, x)) as usize,
-            Zpy => (self.mem[self.pc as usize + 1]).wrapping_add(reg!(self, y)) as usize,
-            Abx => self.get_op_add() + reg!(self, x) as usize,
-            Aby => self.get_op_add() + reg!(self, y) as usize,
+            Zpx => (self.mem[self.pc as usize + 1]).wrapping_add(self.mem[X_REG]) as usize,
+            Zpy => (self.mem[self.pc as usize + 1]).wrapping_add(self.mem[Y_REG]) as usize,
+            Abx => self.get_op_add() + self.mem[X_REG] as usize,
+            Aby => self.get_op_add() + self.mem[Y_REG] as usize,
             Acc => A_REG,
             _ => panic!("Instruction mode doesn't target an Addess!"),
         }
@@ -469,8 +300,8 @@ impl<'a> CPU {
     }
 
     #[inline(always)]
-    pub fn get_opcode(&self) -> &Opcode {
-        &OPCODES[self.mem[self.pc as usize] as usize]
+    pub fn get_opcode(&self) -> Opcode {
+        OPCODES[self.mem[self.pc as usize] as usize]
     }
 
     pub fn emu_err(&mut self) {
@@ -533,22 +364,25 @@ impl<'a> CPU {
     }
 
     fn emu_sta(&mut self) {
-        self.mem[self.get_eff_add()] = reg!(self, a);
+        self.mem[self.get_eff_add()] = self.mem[A_REG];
     }
 
     fn emu_ldy(&mut self) {
-        reg!(self, y) = self.mem[self.get_eff_add()];
-        self.set_nz_reg(reg!(self, y));
+        self.mem[Y_REG] = self.mem[self.get_eff_add()];
+        let r = self.mem[Y_REG];
+        self.set_nz_reg(r);
     }
 
     fn emu_dey(&mut self) {
-        reg!(self, y) -= 1;
-        self.set_nz_reg(reg!(self, y));
+        self.mem[Y_REG] -= 1;
+        let r = self.mem[Y_REG];
+        self.set_nz_reg(r);
     }
 
     fn emu_lda(&mut self) {
-        reg!(self, a) = self.mem[self.get_eff_add()];
-        self.set_nz_reg(reg!(self, a));
+        self.mem[A_REG] = self.mem[self.get_eff_add()];
+        let r = self.mem[A_REG];
+        self.set_nz_reg(r);
     }
 
     fn emu_asl(&mut self) {
@@ -566,7 +400,7 @@ impl<'a> CPU {
 
     fn emu_rol(&mut self) {
         let addr = &mut self.mem[self.get_eff_add()];
-        self.status |= *addr >> 7; // bit 0 goes into carry bit
+        self.status |= *addr >> 7; // bit 7 goes into carry bit
         *addr <<= 1;
         *addr |= self.status & (Status::C as u8); // carry goes into bit 0
     }
@@ -593,7 +427,7 @@ impl<'a> CPU {
     }
 
     fn emu_cmp(&mut self) {
-        let r: i8 = reg!(self, a) as i8 - self.mem[self.get_eff_add()] as i8;
+        let r: i8 = self.mem[A_REG] as i8 - self.mem[self.get_eff_add()] as i8;
         self.set_nz_reg(r as u8);
         if r >= 0 {
             self.status |= (Status::C as u8) << 1
@@ -604,17 +438,18 @@ impl<'a> CPU {
 
     fn emu_pla(&mut self) {
         self.sp += 1;
-        reg!(self, a) = self.mem[0x100 + self.sp as usize];
-        self.set_nz_reg(reg!(self, a));
+        self.mem[A_REG] = self.mem[0x100 + self.sp as usize];
+        let r = self.mem[A_REG];
+        self.set_nz_reg(r);
     }
 
     fn emu_pha(&mut self) {
-        self.mem[0x100 + self.sp as usize] = reg!(self, a);
+        self.mem[0x100 + self.sp as usize] = self.mem[A_REG];
         self.sp -= 1;
     }
 
     fn emu_sbc(&mut self) {
-        let n = i32::from(reg!(self, a)) - i32::from(self.mem[self.get_eff_add()]);
+        let n = i32::from(self.mem[A_REG] as i8) - i32::from(self.mem[self.get_eff_add()] as i8);
         if n < -128 || n > 127 {
             self.status |= (Status::V as u8) << 1
         } else {
@@ -625,7 +460,7 @@ impl<'a> CPU {
         } else {
             self.status &= !(1 << (Status::C as u8))
         }
-        reg!(self, a) = n as u8;
+        self.mem[A_REG] = n as u8;
     }
 
     fn emu_rti(&mut self) {
@@ -634,8 +469,10 @@ impl<'a> CPU {
     }
 
     fn emu_brk(&mut self) {
-        self.push_16(self.pc as u16);
-        self.push_8(self.status);
+        let pc = self.pc as u16;
+        let st = self.status;
+        self.push_16(pc);
+        self.push_8(st);
         self.pc = self.get_mem_16(0xfffe);
         self.status |= 1 << Status::B as u8;
     }
@@ -652,7 +489,7 @@ pub struct Opcode {
     pub mnemonic: &'static str,
 }
 
-fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
+pub fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
     match m {
         Imm => format!("#${:>02X}", ops[0]),
         Zpg => format!("${:>02X}", ops[0]),
