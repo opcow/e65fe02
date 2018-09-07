@@ -1,4 +1,4 @@
-#![feature(rust_2018_preview)]
+// #![feature(rust_2018_preview)]
 #![allow(dead_code)]
 #[macro_use]
 extern crate lazy_static;
@@ -12,7 +12,7 @@ mod disasm;
 
 use clap::{App, Arg};
 use crate::cpu65::CPU;
-use crate::cpu65::OPCODES;
+use crate::cpu65::INSTRUCTIONS;
 use std::fs;
 use std::io;
 
@@ -34,14 +34,13 @@ fn main() -> io::Result<()> {
             Arg::with_name("disassemble")
                 .short("d")
                 .multiple(false)
-                .conflicts_with("trace")
+                // .conflicts_with("trace")
                 // .required(true)
                 .help("Disassemble the binary"),
         ).arg(
             Arg::with_name("trace")
                 .short("t")
                 .multiple(false)
-                .conflicts_with("disassemble")
                 // .required(true)
                 .help("Trace execution of the binary"),
         ).arg(
@@ -94,7 +93,7 @@ fn main() -> io::Result<()> {
 fn count_implemented() {
     // count implemented
     let n = CPU::emu_err as *const fn(&mut CPU);
-    let k = OPCODES
+    let k = INSTRUCTIONS
         .iter()
         .filter(|f| f.ef as *const fn(&mut CPU) != n)
         .count();
