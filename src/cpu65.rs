@@ -80,12 +80,56 @@ pub struct CPU {
     // pub segs:   Vec<Segment>,
 }
 
-// use std::fmt;
-// impl fmt::Display for CPU {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(f, "{}", "I'm a 6502!")
-//     }
-// }
+use std::fmt;
+impl fmt::Display for CPU {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ins = INSTRUCTIONS[self.mem[self.pc as usize] as usize];
+        let opstr = get_format(
+            ins.mode,
+            self.pc as usize,
+            &self.mem[(self.pc as usize + 1)..=(self.pc as usize + 2)],
+        );
+        let operands = match ins.ops {
+            2 => format!(
+                "{:>02X} {:>02X}",
+                self.mem[self.pc as usize + 1],
+                self.mem[self.pc as usize + 2],
+            ),
+            _ => format!("{:>02X}", self.mem[self.pc as usize + 1],),
+        };
+
+        write!(
+            f,
+            "{:>04X} {} {:<10}{:>02X} {:7}|{}| A={:>02X} X={:>02X} Y={:>02X}",
+            self.pc,
+            ins.mnemonic,
+            opstr,
+            ins.opcode,
+            operands,
+            status_as_string(self.status),
+            self.mem[A_REG],
+            self.mem[X_REG],
+            self.mem[Y_REG]
+        )
+    }
+}
+
+fn status_as_string(status: u8) -> String {
+    let s1 = ['-', '-', '-', '-', '-', '-', '-', '-'];
+    let s2 = ['N', 'V', 'U', 'B', 'D', 'I', 'Z', 'C'];
+    let mut ss = String::from("");
+
+    let mut bit = 1 << 7;
+    for i in 0..8 {
+        if status & bit != 0 {
+            ss.push(s2[i]);
+        } else {
+            ss.push(s1[i]);
+        }
+        bit >>= 1;
+    }
+    ss
+}
 
 impl<'a> CPU {
     pub fn new() -> CPU {
@@ -252,52 +296,21 @@ impl<'a> CPU {
     }
 
     #[inline(always)]
-    pub fn get_opcode(&self) -> Instruction {
+    pub fn get_instruction(&self) -> Instruction {
         INSTRUCTIONS[self.mem[self.pc as usize] as usize]
     }
 
     pub fn emu_err(&mut self) {
-        let o = self.get_opcode();
+        let o = self.get_instruction();
         panic!(format!(
             "Emulation for instruction {} not implemented!",
             o.mnemonic
         ));
     }
 
-    fn emu_nop(&mut self) {}
-
-    // status register operations
-    fn emu_clc(&mut self) {
-        self.status &= !(1 << (Status::C as u8));
-    }
-
-    fn emu_cld(&mut self) {
-        self.status &= !(1 << (Status::D as u8));
-    }
-
-    fn emu_cli(&mut self) {
-        self.status &= !(1 << (Status::I as u8));
-    }
-
-    fn emu_clv(&mut self) {
-        self.status &= !(1 << (Status::V as u8));
-    }
-
-    fn emu_sec(&mut self) {
-        self.status |= 1 << (Status::C as u8);
-    }
-
-    fn emu_sed(&mut self) {
-        self.status |= 1 << (Status::D as u8);
-    }
-
-    fn emu_sei(&mut self) {
-        self.status |= 1 << (Status::I as u8);
-    }
-
-    fn emu_sev(&mut self) {
-        self.status |= 1 << (Status::V as u8);
-    }
+    ///////////////////////////////////////////////////////////////
+    ///            instruction emulation functions              ///
+    ///////////////////////////////////////////////////////////////
 
     // bitwise logic
     fn emu_and(&mut self) {
@@ -387,39 +400,6 @@ impl<'a> CPU {
         self.mem[self.get_eff_add()] = self.mem[Y_REG];
     }
 
-    // increment and decrement operations
-    fn emu_dec(&mut self) {
-        let target = self.get_eff_add();
-        self.mem[target].wrapping_sub(1);
-        self.set_nz_reg(self.mem[target]);
-    }
-
-    fn emu_dex(&mut self) {
-        self.mem[X_REG].wrapping_sub(1);
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_dey(&mut self) {
-        self.mem[Y_REG].wrapping_sub(1);
-        self.set_nz_reg(self.mem[Y_REG]);
-    }
-
-    fn emu_inc(&mut self) {
-        let target = self.get_eff_add();
-        self.mem[target].wrapping_sub(1);
-        self.set_nz_reg(self.mem[target]);
-    }
-
-    fn emu_inx(&mut self) {
-        self.mem[X_REG].wrapping_add(1);
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_iny(&mut self) {
-        self.mem[Y_REG].wrapping_add(1);
-        self.set_nz_reg(self.mem[Y_REG]);
-    }
-
     // shift operations
     fn emu_asl(&mut self) {
         let addr = &mut self.mem[self.get_eff_add()];
@@ -491,6 +471,71 @@ impl<'a> CPU {
             + 1;
     }
 
+    // increment and decrement operations
+    fn emu_dec(&mut self) {
+        let target = self.get_eff_add();
+        self.mem[target].wrapping_sub(1);
+        self.set_nz_reg(self.mem[target]);
+    }
+
+    fn emu_dex(&mut self) {
+        self.mem[X_REG].wrapping_sub(1);
+        self.set_nz_reg(self.mem[X_REG]);
+    }
+
+    fn emu_dey(&mut self) {
+        self.mem[Y_REG].wrapping_sub(1);
+        self.set_nz_reg(self.mem[Y_REG]);
+    }
+
+    fn emu_inc(&mut self) {
+        let target = self.get_eff_add();
+        self.mem[target].wrapping_sub(1);
+        self.set_nz_reg(self.mem[target]);
+    }
+
+    fn emu_inx(&mut self) {
+        self.mem[X_REG].wrapping_add(1);
+        self.set_nz_reg(self.mem[X_REG]);
+    }
+
+    fn emu_iny(&mut self) {
+        self.mem[Y_REG].wrapping_add(1);
+        self.set_nz_reg(self.mem[Y_REG]);
+    }
+
+    // addition and subtraction
+    fn emu_adc(&mut self) {
+        //fix me check adc and sbc for correctness
+        let n = i32::from(self.mem[A_REG] as i8) + i32::from(self.mem[self.get_eff_add()] as i8);
+        if n < -128 || n > 127 {
+            self.status |= (Status::V as u8) << 1
+        } else {
+            self.status &= !(1 << (Status::V as u8))
+        }
+        if n > 255 {
+            self.status |= (Status::C as u8) << 1
+        } else {
+            self.status &= !(1 << (Status::C as u8))
+        }
+        self.mem[A_REG] = n as u8;
+    }
+
+    fn emu_sbc(&mut self) {
+        let n = i32::from(self.mem[A_REG] as i8) - i32::from(self.mem[self.get_eff_add()] as i8);
+        if n < -128 || n > 127 {
+            self.status |= (Status::V as u8) << 1
+        } else {
+            self.status &= !(1 << (Status::V as u8))
+        }
+        if n > 0 {
+            self.status |= (Status::C as u8) << 1
+        } else {
+            self.status &= !(1 << (Status::C as u8))
+        }
+        self.mem[A_REG] = n as u8;
+    }
+
     // comparison operations
     fn emu_cmp(&mut self) {
         let r: i8 = self.mem[A_REG] as i8 - self.mem[self.get_eff_add()] as i8;
@@ -554,36 +599,37 @@ impl<'a> CPU {
         self.mem[X_REG] = self.sp;
     }
 
-    // addition and subtraction
-    fn emu_adc(&mut self) {
-        //fix me check adc and sbc for correctness
-        let n = i32::from(self.mem[A_REG] as i8) + i32::from(self.mem[self.get_eff_add()] as i8);
-        if n < -128 || n > 127 {
-            self.status |= (Status::V as u8) << 1
-        } else {
-            self.status &= !(1 << (Status::V as u8))
-        }
-        if n > 255 {
-            self.status |= (Status::C as u8) << 1
-        } else {
-            self.status &= !(1 << (Status::C as u8))
-        }
-        self.mem[A_REG] = n as u8;
+    // status register operations
+    fn emu_clc(&mut self) {
+        self.status &= !(1 << (Status::C as u8));
     }
 
-    fn emu_sbc(&mut self) {
-        let n = i32::from(self.mem[A_REG] as i8) - i32::from(self.mem[self.get_eff_add()] as i8);
-        if n < -128 || n > 127 {
-            self.status |= (Status::V as u8) << 1
-        } else {
-            self.status &= !(1 << (Status::V as u8))
-        }
-        if n > 0 {
-            self.status |= (Status::C as u8) << 1
-        } else {
-            self.status &= !(1 << (Status::C as u8))
-        }
-        self.mem[A_REG] = n as u8;
+    fn emu_cld(&mut self) {
+        self.status &= !(1 << (Status::D as u8));
+    }
+
+    fn emu_cli(&mut self) {
+        self.status &= !(1 << (Status::I as u8));
+    }
+
+    fn emu_clv(&mut self) {
+        self.status &= !(1 << (Status::V as u8));
+    }
+
+    fn emu_sec(&mut self) {
+        self.status |= 1 << (Status::C as u8);
+    }
+
+    fn emu_sed(&mut self) {
+        self.status |= 1 << (Status::D as u8);
+    }
+
+    fn emu_sei(&mut self) {
+        self.status |= 1 << (Status::I as u8);
+    }
+
+    fn emu_sev(&mut self) {
+        self.status |= 1 << (Status::V as u8);
     }
 
     // interrupt related
@@ -600,6 +646,9 @@ impl<'a> CPU {
         self.pc = self.get_mem_16(0xfffe);
         self.status |= 1 << Status::B as u8;
     }
+
+    // nope
+    fn emu_nop(&mut self) {}
 }
 
 #[derive(Copy, Clone)]
@@ -670,7 +719,7 @@ Instruction { opcode: 0x1c, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: 
 Instruction { opcode: 0x1d, ef: CPU::emu_ora, step: 3, ops: 2, mode: Abx, isbr: false, mnemonic: "ORA", },
 Instruction { opcode: 0x1e, ef: CPU::emu_asl, step: 3, ops: 2, mode: Abx, isbr: false, mnemonic: "ASL", },
 Instruction { opcode: 0x1f, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x20, ef: CPU::emu_jsr, step: 0, ops: 2, mode: Abs, isbr: true, mnemonic: "JSR", },
+Instruction { opcode: 0x20, ef: CPU::emu_jsr, step: 0, ops: 2, mode: Abs, isbr: true,  mnemonic: "JSR", },
 Instruction { opcode: 0x21, ef: CPU::emu_and, step: 2, ops: 1, mode: Inx, isbr: false, mnemonic: "AND", },
 Instruction { opcode: 0x22, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0x23, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -686,7 +735,7 @@ Instruction { opcode: 0x2c, ef: CPU::emu_bit, step: 3, ops: 2, mode: Abs, isbr: 
 Instruction { opcode: 0x2d, ef: CPU::emu_and, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "AND", },
 Instruction { opcode: 0x2e, ef: CPU::emu_rol, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "ROL", },
 Instruction { opcode: 0x2f, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x30, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BMI", },
+Instruction { opcode: 0x30, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BMI", },
 Instruction { opcode: 0x31, ef: CPU::emu_and, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "AND", },
 Instruction { opcode: 0x32, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0x33, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -714,11 +763,11 @@ Instruction { opcode: 0x48, ef: CPU::emu_pha, step: 1, ops: 0, mode: Imp, isbr: 
 Instruction { opcode: 0x49, ef: CPU::emu_eor, step: 2, ops: 1, mode: Imm, isbr: false, mnemonic: "EOR", },
 Instruction { opcode: 0x4a, ef: CPU::emu_lsr, step: 1, ops: 0, mode: Acc, isbr: false, mnemonic: "LSR", },
 Instruction { opcode: 0x4b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x4c, ef: CPU::emu_jmp, step: 0, ops: 2, mode: Abs, isbr: true, mnemonic: "JMP", },
+Instruction { opcode: 0x4c, ef: CPU::emu_jmp, step: 0, ops: 2, mode: Abs, isbr: true,  mnemonic: "JMP", },
 Instruction { opcode: 0x4d, ef: CPU::emu_eor, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "EOR", },
 Instruction { opcode: 0x4e, ef: CPU::emu_lsr, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "LSR", },
 Instruction { opcode: 0x4f, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x50, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BVC", },
+Instruction { opcode: 0x50, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BVC", },
 Instruction { opcode: 0x51, ef: CPU::emu_eor, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "EOR", },
 Instruction { opcode: 0x52, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0x53, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -746,11 +795,11 @@ Instruction { opcode: 0x68, ef: CPU::emu_pla, step: 1, ops: 0, mode: Imp, isbr: 
 Instruction { opcode: 0x69, ef: CPU::emu_adc, step: 2, ops: 1, mode: Imm, isbr: false, mnemonic: "ADC", },
 Instruction { opcode: 0x6a, ef: CPU::emu_ror, step: 1, ops: 0, mode: Acc, isbr: false, mnemonic: "ROR", },
 Instruction { opcode: 0x6b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x6c, ef: CPU::emu_err, step: 0, ops: 2, mode: Ind, isbr: true, mnemonic: "JMP", },
+Instruction { opcode: 0x6c, ef: CPU::emu_err, step: 0, ops: 2, mode: Ind, isbr: true,  mnemonic: "JMP", },
 Instruction { opcode: 0x6d, ef: CPU::emu_adc, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "ADC", },
 Instruction { opcode: 0x6e, ef: CPU::emu_ror, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "ROR", },
 Instruction { opcode: 0x6f, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x70, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BVS", },
+Instruction { opcode: 0x70, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BVS", },
 Instruction { opcode: 0x71, ef: CPU::emu_adc, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "ADC", },
 Instruction { opcode: 0x72, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0x73, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -782,7 +831,7 @@ Instruction { opcode: 0x8c, ef: CPU::emu_sty, step: 3, ops: 2, mode: Abs, isbr: 
 Instruction { opcode: 0x8d, ef: CPU::emu_sta, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "STA", },
 Instruction { opcode: 0x8e, ef: CPU::emu_stx, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "STX", },
 Instruction { opcode: 0x8f, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x90, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BCC", },
+Instruction { opcode: 0x90, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BCC", },
 Instruction { opcode: 0x91, ef: CPU::emu_sta, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "STA", },
 Instruction { opcode: 0x92, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0x93, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -814,7 +863,7 @@ Instruction { opcode: 0xac, ef: CPU::emu_ldy, step: 3, ops: 2, mode: Abs, isbr: 
 Instruction { opcode: 0xad, ef: CPU::emu_lda, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "LDA", },
 Instruction { opcode: 0xae, ef: CPU::emu_ldx, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "LDX", },
 Instruction { opcode: 0xaf, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0xb0, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BCS", },
+Instruction { opcode: 0xb0, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BCS", },
 Instruction { opcode: 0xb1, ef: CPU::emu_lda, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "LDA", },
 Instruction { opcode: 0xb2, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0xb3, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -846,7 +895,7 @@ Instruction { opcode: 0xcc, ef: CPU::emu_cpy, step: 3, ops: 2, mode: Abs, isbr: 
 Instruction { opcode: 0xcd, ef: CPU::emu_cmp, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "CMP", },
 Instruction { opcode: 0xce, ef: CPU::emu_dec, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "DEC", },
 Instruction { opcode: 0xcf, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0xd0, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BNE", },
+Instruction { opcode: 0xd0, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BNE", },
 Instruction { opcode: 0xd1, ef: CPU::emu_cmp, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "CMP", },
 Instruction { opcode: 0xd2, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0xd3, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
@@ -878,7 +927,7 @@ Instruction { opcode: 0xec, ef: CPU::emu_cpx, step: 3, ops: 2, mode: Abs, isbr: 
 Instruction { opcode: 0xed, ef: CPU::emu_sbc, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "SBC", },
 Instruction { opcode: 0xee, ef: CPU::emu_inc, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "INC", },
 Instruction { opcode: 0xef, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0xf0, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true, mnemonic: "BEQ", },
+Instruction { opcode: 0xf0, ef: CPU::emu_bra, step: 0, ops: 1, mode: Rel, isbr: true,  mnemonic: "BEQ", },
 Instruction { opcode: 0xf1, ef: CPU::emu_sbc, step: 2, ops: 1, mode: Iny, isbr: false, mnemonic: "SBC", },
 Instruction { opcode: 0xf2, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
 Instruction { opcode: 0xf3, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
