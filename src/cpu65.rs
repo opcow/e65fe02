@@ -266,38 +266,40 @@ impl<'a> CPU {
 
     fn emu_nop(&mut self) {}
 
-    fn emu_cld(&mut self) {
-        self.status &= !(1 << (Status::D as u8));
-    }
-
-    fn emu_sed(&mut self) {
-        self.status |= 1 << (Status::D as u8);
-    }
-
+    // status register operations
     fn emu_clc(&mut self) {
         self.status &= !(1 << (Status::C as u8));
     }
 
-    fn emu_sec(&mut self) {
-        self.status |= 1 << (Status::C as u8);
-    }
-
-    fn emu_clv(&mut self) {
-        self.status &= !(1 << (Status::V as u8));
-    }
-
-    fn emu_sev(&mut self) {
-        self.status |= 1 << (Status::V as u8);
+    fn emu_cld(&mut self) {
+        self.status &= !(1 << (Status::D as u8));
     }
 
     fn emu_cli(&mut self) {
         self.status &= !(1 << (Status::I as u8));
     }
 
+    fn emu_clv(&mut self) {
+        self.status &= !(1 << (Status::V as u8));
+    }
+
+    fn emu_sec(&mut self) {
+        self.status |= 1 << (Status::C as u8);
+    }
+
+    fn emu_sed(&mut self) {
+        self.status |= 1 << (Status::D as u8);
+    }
+
     fn emu_sei(&mut self) {
         self.status |= 1 << (Status::I as u8);
     }
 
+    fn emu_sev(&mut self) {
+        self.status |= 1 << (Status::V as u8);
+    }
+
+    // bitwise logic
     fn emu_and(&mut self) {
         self.mem[A_REG] &= self.mem[self.get_eff_add()];
         if self.mem[A_REG] == 0 {
@@ -336,21 +338,41 @@ impl<'a> CPU {
         }
     }
 
-    fn emu_jsr(&mut self) {
-        let t = self.pc + 2;
-        self.mem[0x100 + self.sp as usize - 1] = t as u8;
-        self.mem[0x100 + self.sp as usize] = (t >> 8) as u8;
-        self.sp -= 2;
-
-        self.pc = u16::from(self.mem[self.pc as usize + 1])
-            | u16::from(self.mem[self.pc as usize + 2]) << 8
+    // register-to-register transfer operations
+    fn emu_tax(&mut self) {
+        self.mem[X_REG] = self.mem[A_REG];
+        self.set_nz_reg(self.mem[X_REG]);
     }
 
-    fn emu_rts(&mut self) {
-        self.sp = self.sp.wrapping_add(2);
-        self.pc = (u16::from(self.mem[0x100 + self.sp as usize - 1])
-            | (u16::from(self.mem[0x100 + self.sp as usize]) << 8))
-            + 1;
+    fn emu_tay(&mut self) {
+        self.mem[Y_REG] = self.mem[A_REG];
+        self.set_nz_reg(self.mem[Y_REG]);
+    }
+
+    fn emu_txa(&mut self) {
+        self.mem[A_REG] = self.mem[X_REG];
+        self.set_nz_reg(self.mem[A_REG]);
+    }
+
+    fn emu_tya(&mut self) {
+        self.mem[A_REG] = self.mem[Y_REG];
+        self.set_nz_reg(self.mem[A_REG]);
+    }
+
+    // load and store operations
+    fn emu_lda(&mut self) {
+        self.mem[A_REG] = self.mem[self.get_eff_add()];
+        self.set_nz_reg(self.mem[A_REG]);
+    }
+
+    fn emu_ldx(&mut self) {
+        self.mem[X_REG] = self.mem[self.get_eff_add()];
+        self.set_nz_reg(self.mem[X_REG]);
+    }
+
+    fn emu_ldy(&mut self) {
+        self.mem[Y_REG] = self.mem[self.get_eff_add()];
+        self.set_nz_reg(self.mem[Y_REG]);
     }
 
     fn emu_sta(&mut self) {
@@ -365,49 +387,21 @@ impl<'a> CPU {
         self.mem[self.get_eff_add()] = self.mem[Y_REG];
     }
 
-    fn emu_tsx(&mut self) {
-        self.mem[X_REG] = self.sp;
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_txa(&mut self) {
-        self.mem[A_REG] = self.mem[X_REG];
-        self.set_nz_reg(self.mem[A_REG]);
-    }
-
-    fn emu_txs(&mut self) {
-        self.mem[X_REG] = self.sp;
-    }
-
-    fn emu_tax(&mut self) {
-        self.mem[X_REG] = self.mem[A_REG];
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_tay(&mut self) {
-        self.mem[Y_REG] = self.mem[A_REG];
-        self.set_nz_reg(self.mem[Y_REG]);
-    }
-
-    fn emu_tya(&mut self) {
-        self.mem[A_REG] = self.mem[Y_REG];
-        self.set_nz_reg(self.mem[A_REG]);
-    }
-
-    fn emu_ldx(&mut self) {
-        self.mem[X_REG] = self.mem[self.get_eff_add()];
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_ldy(&mut self) {
-        self.mem[Y_REG] = self.mem[self.get_eff_add()];
-        self.set_nz_reg(self.mem[Y_REG]);
-    }
-
+    // increment and decrement operations
     fn emu_dec(&mut self) {
         let target = self.get_eff_add();
         self.mem[target].wrapping_sub(1);
         self.set_nz_reg(self.mem[target]);
+    }
+
+    fn emu_dex(&mut self) {
+        self.mem[X_REG].wrapping_sub(1);
+        self.set_nz_reg(self.mem[X_REG]);
+    }
+
+    fn emu_dey(&mut self) {
+        self.mem[Y_REG].wrapping_sub(1);
+        self.set_nz_reg(self.mem[Y_REG]);
     }
 
     fn emu_inc(&mut self) {
@@ -416,9 +410,9 @@ impl<'a> CPU {
         self.set_nz_reg(self.mem[target]);
     }
 
-    fn emu_dey(&mut self) {
-        self.mem[Y_REG].wrapping_sub(1);
-        self.set_nz_reg(self.mem[Y_REG]);
+    fn emu_inx(&mut self) {
+        self.mem[X_REG].wrapping_add(1);
+        self.set_nz_reg(self.mem[X_REG]);
     }
 
     fn emu_iny(&mut self) {
@@ -426,32 +420,17 @@ impl<'a> CPU {
         self.set_nz_reg(self.mem[Y_REG]);
     }
 
-    fn emu_inx(&mut self) {
-        self.mem[X_REG].wrapping_add(1);
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_dex(&mut self) {
-        self.mem[X_REG].wrapping_sub(1);
-        self.set_nz_reg(self.mem[X_REG]);
-    }
-
-    fn emu_lda(&mut self) {
-        self.mem[A_REG] = self.mem[self.get_eff_add()];
-        self.set_nz_reg(self.mem[A_REG]);
-    }
-
+    // shift operations
     fn emu_asl(&mut self) {
         let addr = &mut self.mem[self.get_eff_add()];
         self.status |= *addr >> 7;
         *addr <<= 1;
     }
 
-    fn emu_ror(&mut self) {
+    fn emu_lsr(&mut self) {
         let addr = &mut self.mem[self.get_eff_add()];
         self.status |= *addr & 1; // bit 0 goes into carry bit
         *addr >>= 1;
-        *addr |= self.status & ((Status::C as u8) << 7); // carry goes into bit 7
     }
 
     fn emu_rol(&mut self) {
@@ -461,12 +440,14 @@ impl<'a> CPU {
         *addr |= self.status & (Status::C as u8); // carry goes into bit 0
     }
 
-    fn emu_lsr(&mut self) {
+    fn emu_ror(&mut self) {
         let addr = &mut self.mem[self.get_eff_add()];
         self.status |= *addr & 1; // bit 0 goes into carry bit
         *addr >>= 1;
+        *addr |= self.status & ((Status::C as u8) << 7); // carry goes into bit 7
     }
 
+    // flow control operations
     fn emu_bra(&mut self) {
         let status: bool;
         match self.mem[self.pc as usize] {
@@ -488,6 +469,29 @@ impl<'a> CPU {
         }
     }
 
+    fn emu_jmp(&mut self) {
+        self.pc = u16::from(self.mem[self.pc as usize + 1])
+            | u16::from(self.mem[self.pc as usize + 2]) << 8
+    }
+
+    fn emu_jsr(&mut self) {
+        let t = self.pc + 2;
+        self.mem[0x100 + self.sp as usize - 1] = t as u8;
+        self.mem[0x100 + self.sp as usize] = (t >> 8) as u8;
+        self.sp -= 2;
+
+        self.pc = u16::from(self.mem[self.pc as usize + 1])
+            | u16::from(self.mem[self.pc as usize + 2]) << 8
+    }
+
+    fn emu_rts(&mut self) {
+        self.sp = self.sp.wrapping_add(2);
+        self.pc = (u16::from(self.mem[0x100 + self.sp as usize - 1])
+            | (u16::from(self.mem[0x100 + self.sp as usize]) << 8))
+            + 1;
+    }
+
+    // comparison operations
     fn emu_cmp(&mut self) {
         let r: i8 = self.mem[A_REG] as i8 - self.mem[self.get_eff_add()] as i8;
         self.set_nz_reg(r as u8);
@@ -518,13 +522,7 @@ impl<'a> CPU {
         }
     }
 
-    fn emu_pla(&mut self) {
-        self.sp += 1;
-        self.mem[A_REG] = self.mem[0x100 + self.sp as usize];
-        // let r = self.mem[A_REG];
-        self.set_nz_reg(self.mem[A_REG]);
-    }
-
+    // stack operations
     fn emu_pha(&mut self) {
         self.mem[0x100 + self.sp as usize] = self.mem[A_REG];
         self.sp -= 1;
@@ -535,9 +533,42 @@ impl<'a> CPU {
         self.sp -= 1;
     }
 
+    fn emu_pla(&mut self) {
+        self.sp += 1;
+        self.mem[A_REG] = self.mem[0x100 + self.sp as usize];
+        // let r = self.mem[A_REG];
+        self.set_nz_reg(self.mem[A_REG]);
+    }
+
     fn emu_plp(&mut self) {
         self.sp += 1;
         self.status = self.mem[0x100 + self.sp as usize];
+    }
+
+    fn emu_tsx(&mut self) {
+        self.mem[X_REG] = self.sp;
+        self.set_nz_reg(self.mem[X_REG]);
+    }
+
+    fn emu_txs(&mut self) {
+        self.mem[X_REG] = self.sp;
+    }
+
+    // addition and subtraction
+    fn emu_adc(&mut self) {
+        //fix me check adc and sbc for correctness
+        let n = i32::from(self.mem[A_REG] as i8) + i32::from(self.mem[self.get_eff_add()] as i8);
+        if n < -128 || n > 127 {
+            self.status |= (Status::V as u8) << 1
+        } else {
+            self.status &= !(1 << (Status::V as u8))
+        }
+        if n > 255 {
+            self.status |= (Status::C as u8) << 1
+        } else {
+            self.status &= !(1 << (Status::C as u8))
+        }
+        self.mem[A_REG] = n as u8;
     }
 
     fn emu_sbc(&mut self) {
@@ -555,22 +586,7 @@ impl<'a> CPU {
         self.mem[A_REG] = n as u8;
     }
 
-    fn emu_adc(&mut self) {
-        //fix me check adc and sbc for correctness
-        let n = i32::from(self.mem[A_REG] as i8) + i32::from(self.mem[self.get_eff_add()] as i8);
-        if n < -128 || n > 127 {
-            self.status |= (Status::V as u8) << 1
-        } else {
-            self.status &= !(1 << (Status::V as u8))
-        }
-        if n > 255 {
-            self.status |= (Status::C as u8) << 1
-        } else {
-            self.status &= !(1 << (Status::C as u8))
-        }
-        self.mem[A_REG] = n as u8;
-    }
-
+    // interrupt related
     fn emu_rti(&mut self) {
         self.status = self.pop_8();
         self.pc = self.pop_16();
@@ -698,7 +714,7 @@ Instruction { opcode: 0x48, ef: CPU::emu_pha, step: 1, ops: 0, mode: Imp, isbr: 
 Instruction { opcode: 0x49, ef: CPU::emu_eor, step: 2, ops: 1, mode: Imm, isbr: false, mnemonic: "EOR", },
 Instruction { opcode: 0x4a, ef: CPU::emu_lsr, step: 1, ops: 0, mode: Acc, isbr: false, mnemonic: "LSR", },
 Instruction { opcode: 0x4b, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
-Instruction { opcode: 0x4c, ef: CPU::emu_err, step: 0, ops: 2, mode: Abs, isbr: true, mnemonic: "JMP", },
+Instruction { opcode: 0x4c, ef: CPU::emu_jmp, step: 0, ops: 2, mode: Abs, isbr: true, mnemonic: "JMP", },
 Instruction { opcode: 0x4d, ef: CPU::emu_eor, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "EOR", },
 Instruction { opcode: 0x4e, ef: CPU::emu_lsr, step: 3, ops: 2, mode: Abs, isbr: false, mnemonic: "LSR", },
 Instruction { opcode: 0x4f, ef: CPU::emu_err, step: 0, ops: 0, mode: Unk, isbr: false, mnemonic: "---", },
