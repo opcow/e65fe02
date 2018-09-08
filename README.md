@@ -2,4 +2,4 @@
 
 **An NMOS 6502 emulator in Rust**
 
-* 74 opcodes currently emulated
+* 149 opcodes currently emulated
