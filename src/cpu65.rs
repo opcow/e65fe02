@@ -406,33 +406,33 @@ impl<'a> CPU {
 
     fn emu_dec(&mut self) {
         let target = self.get_eff_add();
-        self.mem[target] -= 1;
+        self.mem[target].wrapping_sub(1);
         self.set_nz_reg(self.mem[target]);
     }
 
     fn emu_inc(&mut self) {
         let target = self.get_eff_add();
-        self.mem[target] -= 1;
+        self.mem[target].wrapping_sub(1);
         self.set_nz_reg(self.mem[target]);
     }
 
     fn emu_dey(&mut self) {
-        self.mem[Y_REG] -= 1;
+        self.mem[Y_REG].wrapping_sub(1);
         self.set_nz_reg(self.mem[Y_REG]);
     }
 
     fn emu_iny(&mut self) {
-        self.mem[Y_REG] += 1;
+        self.mem[Y_REG].wrapping_add(1);
         self.set_nz_reg(self.mem[Y_REG]);
     }
 
     fn emu_inx(&mut self) {
-        self.mem[X_REG] += 1;
+        self.mem[X_REG].wrapping_add(1);
         self.set_nz_reg(self.mem[X_REG]);
     }
 
     fn emu_dex(&mut self) {
-        self.mem[X_REG] -= 1;
+        self.mem[X_REG].wrapping_sub(1);
         self.set_nz_reg(self.mem[X_REG]);
     }
 
