@@ -1,5 +1,5 @@
-use super::cpu65::{Instruction, Modes, CPU, INSTRUCTIONS};
-use crate::cpu65::get_format;
+use super::cpu65::{get_format, Instruction, Modes, CPU, INSTRUCTIONS};
+use crate::prascii::print_ascii;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -18,7 +18,6 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize) {
     let mem = cpu.get_mem();
     let b = BRAMAP.lock().unwrap();
 
-    println!("        .ORG ${:04X}", start);
     while pc <= end {
         ins = &INSTRUCTIONS[mem[pc] as usize];
         // check for a label matching this address
@@ -28,18 +27,21 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize) {
                 Modes::Rel => target = cpu.get_br_addr(pc as isize),
                 _ => target = cpu.get_mem_usize(pc + 1),
             }
-            println!("{:7}   {} LOC{:04X}", label, ins.mnemonic, target);
+            print_ascii(&format!(
+                "{}    {} LOC{:04X}\n",
+                label, ins.mnemonic, target
+            ));
         } else {
-            println!(
-                "{:7}   {} {}",
+            print_ascii(&format!(
+                "{}    {} {}\n",
                 label,
                 ins.mnemonic,
                 get_format(ins.mode, pc, &mem[(pc as usize + 1)..=(pc as usize + 2)],)
-            );
+            ));
         }
         pc += ins.ops as usize + 1;
     }
-    print!("\n");
+    print_ascii("\n");
 }
 
 pub fn trace(cpu: &mut CPU, start: u16, count: u32) {
@@ -74,13 +76,13 @@ pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize) {
                 Modes::Rel => {
                     target = cpu.get_br_addr(pc as isize);
                     if !b.contains_key(&target) {
-                        b.insert(target, format!("LOC{:04X}", target));
+                        b.insert(target, format!("LOC{:04X}\n", target));
                     }
                 }
                 _ => {
                     target = cpu.get_mem_usize(pc + 1);
                     if !b.contains_key(&target) {
-                        b.insert(target, format!("LOC{:04X}", target));
+                        b.insert(target, format!("LOC{:04X}\n", target));
                     }
                 }
             }

@@ -1,14 +1,6 @@
 use crate::cpu65::Modes::*;
-use std::collections::HashMap;
+use std::fmt;
 use std::io::{Error, ErrorKind};
-use std::sync::Mutex;
-
-lazy_static! {
-    static ref BRAMAP: Mutex<HashMap<usize, String>> = {
-        let m = HashMap::new();
-        Mutex::new(m)
-    };
-}
 
 const MAX_ADD: usize = 0xffff;
 const MEM_SIZE: usize = MAX_ADD + 6; // registers stored in array
@@ -78,7 +70,6 @@ pub struct CPU {
     pub ins: [Instruction; 256],
 }
 
-use std::fmt;
 impl fmt::Display for CPU {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ins = INSTRUCTIONS[self.mem[self.pc as usize] as usize];

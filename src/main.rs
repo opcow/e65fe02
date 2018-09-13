@@ -9,10 +9,13 @@ extern crate clap;
 
 mod cpu65;
 mod disasm;
+mod prascii;
 
 use clap::{App, Arg};
 use crate::cpu65::CPU;
 use crate::cpu65::INSTRUCTIONS;
+use crate::prascii::print_ascii;
+
 use std::fs;
 use std::io;
 
@@ -66,16 +69,18 @@ fn main() -> io::Result<()> {
 
     let segs = cpu.load(&buf)?;
 
-    count_implemented();
-
-    println!();
+    // count_implemented();
+    // println!();
+    println!("{:?}", b"foo");
 
     if matches.is_present("disassemble") {
-        println!(";;; begin disassembley ;;;\n");
-        println!("    PROCESSOR 6502");
-        println!("    LIST ON\n");
+        print_ascii(&";;; begin disassembley ;;;\n");
+        print_ascii(&"    PROCESSOR 6502");
+        print_ascii(&"    LIST ON\n\n");
+        print_ascii(&"START\n");
 
         for seg in &segs {
+            // assuming all segments are code
             disasm::first_pass(&cpu, seg.start, seg.end);
             disasm::disasm(&cpu, seg.start, seg.end);
         }
@@ -84,6 +89,7 @@ fn main() -> io::Result<()> {
         let start = segs[0].start as u16;
         disasm::trace(&mut cpu, start, steps);
     }
+
     // let fname = "mem.bin";
     // fs::write(fname, &cpu.get_mem()[..])?;
 
