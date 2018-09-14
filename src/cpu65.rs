@@ -48,7 +48,7 @@ pub enum Modes {
 }
 
 // the 6502 status register
-enum StatusReg {
+enum Status {
     C, // carry
     Z, // zero
     I, // interrupt
@@ -58,8 +58,6 @@ enum StatusReg {
     V, // overflow
     N, // negative
 }
-
-struct Status(u8);
 
 // CPU virtual 6502 processor + memory
 pub struct CPU {
@@ -209,6 +207,11 @@ impl<'a> CPU {
         self.mem[a] as usize | (self.mem[a + 1] as usize) << 8
     }
 
+    #[inline(always)]
+    fn check_status(&self, r: Status) -> bool {
+        self.status & (1 << (r as u8)) != 0
+    }
+
     fn get_eff_add(&self) -> usize {
         // fix me zero page wrapping
         match INSTRUCTIONS[self.mem[self.pc as usize] as usize].mode {
@@ -269,18 +272,14 @@ impl<'a> CPU {
         self.pc += ins.step; // update program counter
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn set_nz_reg(&mut self, r: u8) {
         if r == 0 {
-            self.status |= 1 << StatusReg::Z as u8;
-            self.status &= !(1 << (StatusReg::N as u8));
+            self.status |= 1 << Status::Z as u8;
+            self.status &= !(1 << (Status::N as u8));
         } else {
-            self.status &= !(1 << (StatusReg::Z as u8));
-            if r & (1 << 7) != 0 {
-                self.status |= 1 << StatusReg::N as u8;
-            } else {
-                self.status &= !(1 << (StatusReg::N as u8));
-            }
+            self.status &= !(1 << (Status::Z as u8));
+            self.status = self.status & 0x7f | (r & 0x80);
         }
     }
 
@@ -305,17 +304,17 @@ impl<'a> CPU {
     fn emu_and(&mut self) {
         self.mem[A_REG] &= self.mem[self.get_eff_add()];
         if self.mem[A_REG] == 0 {
-            self.status |= 1 << StatusReg::Z as u8
+            self.status |= 1 << Status::Z as u8
         }
         if (self.mem[A_REG] & 1 << 7) != 0 {
-            self.status |= 1 << StatusReg::N as u8
+            self.status |= 1 << Status::N as u8
         }
     }
 
     fn emu_bit(&mut self) {
         let target = self.get_eff_add();
         if self.mem[A_REG] & self.mem[target] == 0 {
-            self.status |= 1 << StatusReg::Z as u8
+            self.status |= 1 << Status::Z as u8
         }
         self.status |= self.mem[target] | 0xC0;
     }
@@ -323,20 +322,20 @@ impl<'a> CPU {
     fn emu_eor(&mut self) {
         self.mem[A_REG] ^= self.mem[self.get_eff_add()];
         if self.mem[A_REG] == 0 {
-            self.status |= 1 << StatusReg::Z as u8
+            self.status |= 1 << Status::Z as u8
         }
         if (self.mem[A_REG] & 1 << 7) != 0 {
-            self.status |= 1 << StatusReg::N as u8
+            self.status |= 1 << Status::N as u8
         }
     }
 
     fn emu_ora(&mut self) {
         self.mem[A_REG] |= self.mem[self.get_eff_add()];
         if self.mem[A_REG] == 0 {
-            self.status |= 1 << StatusReg::Z as u8
+            self.status |= 1 << Status::Z as u8
         }
         if (self.mem[A_REG] & 1 << 7) != 0 {
-            self.status |= 1 << StatusReg::N as u8
+            self.status |= 1 << Status::N as u8
         }
     }
 
@@ -406,28 +405,28 @@ impl<'a> CPU {
         let addr = &mut self.mem[self.get_eff_add()];
         self.status |= *addr >> 7; // bit 7 goes into carry bit
         *addr <<= 1;
-        *addr |= self.status & (StatusReg::C as u8); // carry goes into bit 0
+        *addr |= self.status & (Status::C as u8); // carry goes into bit 0
     }
 
     fn emu_ror(&mut self) {
         let addr = &mut self.mem[self.get_eff_add()];
         self.status |= *addr & 1; // bit 0 goes into carry bit
         *addr >>= 1;
-        *addr |= self.status & ((StatusReg::C as u8) << 7); // carry goes into bit 7
+        *addr |= self.status & ((Status::C as u8) << 7); // carry goes into bit 7
     }
 
     // flow control operations
     fn emu_bra(&mut self) {
         let status: bool;
         match self.mem[self.pc as usize] {
-            0x10 => status = (self.status & (1 << StatusReg::N as u8)) == 0,
-            0x30 => status = (self.status & (1 << StatusReg::N as u8)) != 0,
-            0x50 => status = (self.status & (1 << StatusReg::V as u8)) == 0,
-            0x70 => status = (self.status & (1 << StatusReg::V as u8)) != 0,
-            0x90 => status = (self.status & (1 << StatusReg::C as u8)) == 0,
-            0xb0 => status = (self.status & (1 << StatusReg::C as u8)) != 0,
-            0xd0 => status = (self.status & (1 << StatusReg::Z as u8)) == 0,
-            0xf0 => status = (self.status & (1 << StatusReg::Z as u8)) != 0,
+            0x10 => status = (self.status & (1 << Status::N as u8)) == 0,
+            0x30 => status = (self.status & (1 << Status::N as u8)) != 0,
+            0x50 => status = (self.status & (1 << Status::V as u8)) == 0,
+            0x70 => status = (self.status & (1 << Status::V as u8)) != 0,
+            0x90 => status = (self.status & (1 << Status::C as u8)) == 0,
+            0xb0 => status = (self.status & (1 << Status::C as u8)) != 0,
+            0xd0 => status = (self.status & (1 << Status::Z as u8)) == 0,
+            0xf0 => status = (self.status & (1 << Status::Z as u8)) != 0,
             _ => panic!("Encountered unknown branch opcode!"),
         }
         if status {
@@ -463,86 +462,88 @@ impl<'a> CPU {
     // increment and decrement operations
     fn emu_dec(&mut self) {
         let target = self.get_eff_add();
-        self.mem[target].wrapping_sub(1);
+        self.mem[target] = self.mem[target].wrapping_sub(1);
         self.set_nz_reg(self.mem[target]);
     }
 
     fn emu_dex(&mut self) {
-        self.mem[X_REG].wrapping_sub(1);
+        self.mem[X_REG] = self.mem[X_REG].wrapping_sub(1);
         self.set_nz_reg(self.mem[X_REG]);
     }
 
     fn emu_dey(&mut self) {
-        self.mem[Y_REG].wrapping_sub(1);
+        self.mem[Y_REG] = self.mem[Y_REG].wrapping_sub(1);
         self.set_nz_reg(self.mem[Y_REG]);
     }
 
     fn emu_inc(&mut self) {
         let target = self.get_eff_add();
-        self.mem[target].wrapping_sub(1);
+        self.mem[target] = self.mem[target].wrapping_sub(1);
         self.set_nz_reg(self.mem[target]);
     }
 
     fn emu_inx(&mut self) {
-        self.mem[X_REG].wrapping_add(1);
+        self.mem[X_REG] = self.mem[X_REG].wrapping_add(1);
         self.set_nz_reg(self.mem[X_REG]);
     }
 
     fn emu_iny(&mut self) {
-        self.mem[Y_REG].wrapping_add(1);
+        self.mem[Y_REG] = self.mem[Y_REG].wrapping_add(1);
         self.set_nz_reg(self.mem[Y_REG]);
     }
 
     // addition and subtraction
     fn emu_adc(&mut self) {
         //fix me check adc and sbc for correctness
-        let sign = self.mem[A_REG] & 0x80;
-        let mut n = self.mem[A_REG].wrapping_add(self.mem[self.get_eff_add()]);
-        n = n.wrapping_add(if self.status & (1 << (StatusReg::C as u8))
-            == (1 << (StatusReg::C as u8))
-        {
+        let r = self.mem[A_REG].overflowing_add(
+            self.mem[self.get_eff_add()] + if self.status & (1 << (Status::C as u8)) != 0 {
+                1
+            } else {
+                0
+            },
+        );
+        if self.status & (1 << (Status::C as u8)) == (1 << (Status::C as u8)) {
             1
         } else {
             0
-        });
+        };
         // set carry if wraps
-        if n < self.mem[A_REG] {
-            self.status |= 1 << (StatusReg::C as u8)
+        if r.1 {
+            self.status |= 1 << (Status::C as u8)
         } else {
-            self.status &= !(1 << (StatusReg::C as u8))
+            self.status &= !(1 << (Status::C as u8))
         }
-        self.mem[A_REG] = n;
         // set overflow if sign bit flipped
-        if sign != self.mem[A_REG] & 0x80 {
-            self.status |= 1 << (StatusReg::V as u8)
+        if (r.0 ^ self.mem[A_REG]) & 0x80 != 0 {
+            self.status |= 1 << (Status::V as u8)
         } else {
-            self.status &= !(1 << (StatusReg::V as u8))
+            self.status &= !(1 << (Status::V as u8))
         }
+        self.mem[A_REG] = r.0;
+        self.set_nz_reg(self.mem[A_REG]);
     }
 
     fn emu_sbc(&mut self) {
-        let sign = self.mem[A_REG] & 0x80;
-        let mut n = self.mem[A_REG].wrapping_sub(self.mem[self.get_eff_add()]);
-        n = n.wrapping_sub(if self.status & (1 << (StatusReg::C as u8))
-            == (1 << (StatusReg::C as u8))
-        {
+        let mut r = self.mem[A_REG].wrapping_sub(self.mem[self.get_eff_add()]);
+        r = r.wrapping_sub(if self.status & (1 << (Status::C as u8)) != 0 {
             0
         } else {
             1
         });
         // set carry if wraps
-        if n > self.mem[A_REG] {
-            self.status |= (StatusReg::C as u8) << 1
+        if r > self.mem[A_REG] {
+            self.status |= (Status::C as u8) << 1
         } else {
-            self.status &= !(1 << (StatusReg::C as u8))
+            self.status &= !(1 << (Status::C as u8))
         }
         // set overflow if sign bit flipped
-        if sign != self.mem[A_REG] & 0x80 {
-            self.status |= 1 << (StatusReg::V as u8)
+        if (r ^ self.mem[A_REG]) & 0x80 == 0 {
+            self.status |= 1 << (Status::V as u8)
         } else {
-            self.status &= !(1 << (StatusReg::V as u8))
+            self.status &= !(1 << (Status::V as u8))
         }
-        self.mem[A_REG] = n;
+        self.mem[A_REG] = r;
+        self.set_nz_reg(self.mem[A_REG]);
     }
 
     // comparison operations
@@ -550,9 +551,9 @@ impl<'a> CPU {
         let r: i8 = self.mem[A_REG] as i8 - self.mem[self.get_eff_add()] as i8;
         self.set_nz_reg(r as u8);
         if r >= 0 {
-            self.status |= (StatusReg::C as u8) << 1
+            self.status |= (Status::C as u8) << 1
         } else {
-            self.status &= !(1 << (StatusReg::C as u8))
+            self.status &= !(1 << (Status::C as u8))
         }
     }
 
@@ -560,9 +561,9 @@ impl<'a> CPU {
         let r: i8 = self.mem[X_REG] as i8 - self.mem[self.get_eff_add()] as i8;
         self.set_nz_reg(r as u8);
         if r >= 0 {
-            self.status |= (StatusReg::C as u8) << 1
+            self.status |= (Status::C as u8) << 1
         } else {
-            self.status &= !(1 << (StatusReg::C as u8))
+            self.status &= !(1 << (Status::C as u8))
         }
     }
 
@@ -570,9 +571,9 @@ impl<'a> CPU {
         let r: i8 = self.mem[Y_REG] as i8 - self.mem[self.get_eff_add()] as i8;
         self.set_nz_reg(r as u8);
         if r >= 0 {
-            self.status |= (StatusReg::C as u8) << 1
+            self.status |= (Status::C as u8) << 1
         } else {
-            self.status &= !(1 << (StatusReg::C as u8))
+            self.status &= !(1 << (Status::C as u8))
         }
     }
 
@@ -610,35 +611,35 @@ impl<'a> CPU {
 
     // status register operations
     fn emu_clc(&mut self) {
-        self.status &= !(1 << (StatusReg::C as u8));
+        self.status &= !(1 << (Status::C as u8));
     }
 
     fn emu_cld(&mut self) {
-        self.status &= !(1 << (StatusReg::D as u8));
+        self.status &= !(1 << (Status::D as u8));
     }
 
     fn emu_cli(&mut self) {
-        self.status &= !(1 << (StatusReg::I as u8));
+        self.status &= !(1 << (Status::I as u8));
     }
 
     fn emu_clv(&mut self) {
-        self.status &= !(1 << (StatusReg::V as u8));
+        self.status &= !(1 << (Status::V as u8));
     }
 
     fn emu_sec(&mut self) {
-        self.status |= 1 << (StatusReg::C as u8);
+        self.status |= 1 << (Status::C as u8);
     }
 
     fn emu_sed(&mut self) {
-        self.status |= 1 << (StatusReg::D as u8);
+        self.status |= 1 << (Status::D as u8);
     }
 
     fn emu_sei(&mut self) {
-        self.status |= 1 << (StatusReg::I as u8);
+        self.status |= 1 << (Status::I as u8);
     }
 
     fn emu_sev(&mut self) {
-        self.status |= 1 << (StatusReg::V as u8);
+        self.status |= 1 << (Status::V as u8);
     }
 
     // interrupt related
@@ -653,7 +654,7 @@ impl<'a> CPU {
         self.push_16(self.pc);
         self.push_8(self.status);
         self.pc = self.get_mem_16(0xfffe);
-        self.status |= 1 << StatusReg::B as u8;
+        self.status |= 1 << Status::B as u8;
     }
 
     // nope
