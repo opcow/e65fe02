@@ -496,33 +496,53 @@ impl<'a> CPU {
     // addition and subtraction
     fn emu_adc(&mut self) {
         //fix me check adc and sbc for correctness
-        let n = i32::from(self.mem[A_REG] as i8) + i32::from(self.mem[self.get_eff_add()] as i8);
-        if n < -128 || n > 127 {
-            self.status |= (StatusReg::V as u8) << 1
+        let sign = self.mem[A_REG] & 0x80;
+        let mut n = self.mem[A_REG].wrapping_add(self.mem[self.get_eff_add()]);
+        n = n.wrapping_add(if self.status & (1 << (StatusReg::C as u8))
+            == (1 << (StatusReg::C as u8))
+        {
+            1
         } else {
-            self.status &= !(1 << (StatusReg::V as u8))
-        }
-        if n > 255 {
-            self.status |= (StatusReg::C as u8) << 1
+            0
+        });
+        // set carry if wraps
+        if n < self.mem[A_REG] {
+            self.status |= 1 << (StatusReg::C as u8)
         } else {
             self.status &= !(1 << (StatusReg::C as u8))
         }
-        self.mem[A_REG] = n as u8;
+        self.mem[A_REG] = n;
+        // set overflow if sign bit flipped
+        if sign != self.mem[A_REG] & 0x80 {
+            self.status |= 1 << (StatusReg::V as u8)
+        } else {
+            self.status &= !(1 << (StatusReg::V as u8))
+        }
     }
 
     fn emu_sbc(&mut self) {
-        let n = i32::from(self.mem[A_REG] as i8) - i32::from(self.mem[self.get_eff_add()] as i8);
-        if n < -128 || n > 127 {
-            self.status |= (StatusReg::V as u8) << 1
+        let sign = self.mem[A_REG] & 0x80;
+        let mut n = self.mem[A_REG].wrapping_sub(self.mem[self.get_eff_add()]);
+        n = n.wrapping_sub(if self.status & (1 << (StatusReg::C as u8))
+            == (1 << (StatusReg::C as u8))
+        {
+            0
         } else {
-            self.status &= !(1 << (StatusReg::V as u8))
-        }
-        if n > 0 {
+            1
+        });
+        // set carry if wraps
+        if n > self.mem[A_REG] {
             self.status |= (StatusReg::C as u8) << 1
         } else {
             self.status &= !(1 << (StatusReg::C as u8))
         }
-        self.mem[A_REG] = n as u8;
+        // set overflow if sign bit flipped
+        if sign != self.mem[A_REG] & 0x80 {
+            self.status |= 1 << (StatusReg::V as u8)
+        } else {
+            self.status &= !(1 << (StatusReg::V as u8))
+        }
+        self.mem[A_REG] = n;
     }
 
     // comparison operations
