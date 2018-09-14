@@ -4,5 +4,7 @@
 *.com
 *.7z
 *.65o
+*.asm
+*.out
 out.txt
 .vscode
