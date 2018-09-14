@@ -496,17 +496,8 @@ impl<'a> CPU {
     fn emu_adc(&mut self) {
         //fix me check adc and sbc for correctness
         let r = self.mem[A_REG].overflowing_add(
-            self.mem[self.get_eff_add()] + if self.status & (1 << (Status::C as u8)) != 0 {
-                1
-            } else {
-                0
-            },
+            self.mem[self.get_eff_add()] + if self.check_status(Status::C) { 1 } else { 0 },
         );
-        if self.status & (1 << (Status::C as u8)) == (1 << (Status::C as u8)) {
-            1
-        } else {
-            0
-        };
         // set carry if wraps
         if r.1 {
             self.status |= 1 << (Status::C as u8)
@@ -524,25 +515,22 @@ impl<'a> CPU {
     }
 
     fn emu_sbc(&mut self) {
-        let mut r = self.mem[A_REG].wrapping_sub(self.mem[self.get_eff_add()]);
-        r = r.wrapping_sub(if self.status & (1 << (Status::C as u8)) != 0 {
-            0
-        } else {
-            1
-        });
+        let r = self.mem[A_REG].overflowing_sub(
+            self.mem[self.get_eff_add()] + if self.check_status(Status::C) { 0 } else { 1 },
+        );
         // set carry if wraps
-        if r > self.mem[A_REG] {
+        if r.1 {
             self.status |= (Status::C as u8) << 1
         } else {
             self.status &= !(1 << (Status::C as u8))
         }
         // set overflow if sign bit flipped
-        if (r ^ self.mem[A_REG]) & 0x80 == 0 {
+        if (r.0 ^ self.mem[A_REG]) & 0x80 == 0 {
             self.status |= 1 << (Status::V as u8)
         } else {
             self.status &= !(1 << (Status::V as u8))
         }
-        self.mem[A_REG] = r;
+        self.mem[A_REG] = r.0;
         self.set_nz_reg(self.mem[A_REG]);
     }
 
