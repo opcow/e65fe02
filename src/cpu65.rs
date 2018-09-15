@@ -61,11 +61,11 @@ enum Status {
 
 // CPU virtual 6502 processor + memory
 pub struct CPU {
-    status:  u8,
-    pub sp:  u8,
-    pub pc:  u16,
-    mem:     [u8; MEM_SIZE],
-    pub ins: [Instruction; 256],
+    status: u8,
+    sp:     u8,
+    pc:     u16,
+    mem:    [u8; MEM_SIZE],
+    ins:    [Instruction; 256],
 }
 
 impl fmt::Display for CPU {
@@ -132,6 +132,9 @@ impl<'a> CPU {
         }
     }
 
+    ///////////////////////////////////////////////////
+    /// pub methods for accessing the machine state ///
+    ///////////////////////////////////////////////////
     pub fn set_pc(&mut self, pc: u16) {
         self.pc = pc;
     }
@@ -144,62 +147,18 @@ impl<'a> CPU {
         self.status
     }
 
+    // gets the absolute address of a relative branch
     #[inline(always)]
-    fn push_8(&mut self, n: u8) {
-        self.mem[0x100 + self.sp as usize] = n;
-        self.sp = self.sp.wrapping_sub(1);
-    }
-    #[inline(always)]
-    fn push_16(&mut self, n: u16) {
-        self.mem[0x100 + self.sp as usize - 1] = n as u8;
-        self.mem[0x100 + self.sp as usize] = (n >> 8) as u8;
-        self.sp = self.sp.wrapping_sub(2);
-    }
-    // push the 16-bit operand
-    fn push_op_16(&mut self) {
-        self.mem[0x100 + self.sp as usize - 1] = self.mem[self.pc as usize + 1];
-        self.mem[0x100 + self.sp as usize] = self.mem[self.pc as usize + 2];
-        self.sp = self.sp.wrapping_sub(2);
-    }
-
-    fn pop_8(&mut self) -> u8 {
-        self.sp = self.sp.wrapping_add(1);
-        self.mem[0x100 + self.sp as usize]
-    }
-
-    fn pop_16(&mut self) -> u16 {
-        self.sp = self.sp.wrapping_add(2);
-        u16::from(self.mem[0x100 + self.sp as usize - 1])
-            & u16::from(self.mem[0x100 + self.sp as usize]) << 8
+    pub fn get_br_addr(&self, pc: isize) -> usize {
+        (self.mem[pc as usize + 1] as i8 as isize + pc as isize + 2) as usize
     }
 
     pub fn get_mem_mut(&mut self) -> &mut [u8] {
         &mut self.mem
     }
+
     pub fn get_mem(&self) -> &[u8] {
         &self.mem
-    }
-
-    #[inline(always)]
-    fn get_op_add(&self) -> usize {
-        (self.mem[self.pc as usize + 1] as usize) | (self.mem[self.pc as usize + 2] as usize) << 8
-    }
-    // #[inline(always)]
-    // fn get_op_16(&self) -> u16 {
-    //     u16::from(self.mem[self.pc as usize + 1]) | u16::from(self.mem[self.pc as usize + 2]) << 8
-    // }
-    #[inline(always)]
-    // gets the absolute address of a relative branch
-    pub fn get_br_addr(&self, pc: isize) -> usize {
-        (self.mem[pc as usize + 1] as i8 as isize + pc as isize + 2) as usize
-    }
-    #[inline(always)]
-    fn get_op_u8(&self) -> u8 {
-        self.mem[self.pc as usize + 1]
-    }
-    #[inline(always)]
-    fn get_mem_16(&self, a: usize) -> u16 {
-        u16::from(self.mem[a]) & u16::from(self.mem[a + 1]) << 8
     }
 
     #[inline(always)]
@@ -207,9 +166,80 @@ impl<'a> CPU {
         self.mem[a] as usize | (self.mem[a + 1] as usize) << 8
     }
 
+    pub fn step(&mut self) {
+        let ins = &INSTRUCTIONS[self.mem[self.pc as usize] as usize];
+        (ins.ef)(self); // call emu fn
+        self.pc += ins.step; // update program counter
+    }
+
+    pub fn load(&mut self, buf: &[u8]) -> Result<Vec<Segment>, LoadError> {
+        let mut start_add: usize;
+        let mut end_add: usize;
+        let mut segs: Vec<Segment> = Vec::new();
+
+        let mut offset = 2; // skip the header
+        while offset < buf.len() {
+            start_add = (buf[offset] as usize) | (buf[offset + 1] as usize) << 8;
+            end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
+
+            if start_add > 0xfffc || end_add > 0xffff || end_add < start_add + 2 {
+                return Err(LoadError::SegmentAddress);
+            }
+
+            let seg_beg = offset + 4;
+            let seg_end = seg_beg + (end_add - start_add) + 1;
+            segs.push(Segment {
+                start: start_add,
+                end:   end_add,
+            });
+            self.mem[start_add..=end_add].clone_from_slice(&buf[seg_beg..seg_end]);
+            offset = seg_end;
+        }
+        Ok(segs)
+    }
+
+    ///////////////////////////
+    /// convenience methods ///
+    ///////////////////////////
+    #[inline(always)]
+    fn push_16(&mut self, n: u16) {
+        self.mem[0x100 + self.sp as usize - 1] = n as u8;
+        self.mem[0x100 + self.sp as usize] = (n >> 8) as u8;
+        self.sp = self.sp.wrapping_sub(2);
+    }
+
+    #[inline(always)]
+    fn pop_16(&mut self) -> u16 {
+        self.sp = self.sp.wrapping_add(2);
+        u16::from(self.mem[0x100 + self.sp as usize - 1])
+            & u16::from(self.mem[0x100 + self.sp as usize]) << 8
+    }
+
+    #[inline(always)]
+    fn push_8(&mut self, n: u8) {
+        self.mem[0x100 + self.sp as usize] = n;
+        self.sp = self.sp.wrapping_sub(1);
+    }
+
+    #[inline(always)]
+    fn pop_8(&mut self) -> u8 {
+        self.sp = self.sp.wrapping_add(1);
+        self.mem[0x100 + self.sp as usize]
+    }
+
+    #[inline(always)]
+    fn get_mem_16(&self, a: usize) -> u16 {
+        u16::from(self.mem[a]) & u16::from(self.mem[a + 1]) << 8
+    }
+
     #[inline(always)]
     fn check_status(&self, r: Status) -> bool {
         self.status & (1 << (r as u8)) != 0
+    }
+
+    #[inline(always)]
+    fn get_op_add(&self) -> usize {
+        (self.mem[self.pc as usize + 1] as usize) | (self.mem[self.pc as usize + 2] as usize) << 8
     }
 
     fn get_eff_add(&self) -> usize {
@@ -240,39 +270,7 @@ impl<'a> CPU {
         }
     }
 
-    pub fn load(&mut self, buf: &[u8]) -> Result<Vec<Segment>, LoadError> {
-        let mut start_add: usize;
-        let mut end_add: usize;
-        let mut segs: Vec<Segment> = Vec::new();
-
-        let mut offset = 2; // skip the header
-        while offset < buf.len() {
-            start_add = (buf[offset] as usize) | (buf[offset + 1] as usize) << 8;
-            end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
-
-            if start_add > 0xfffc || end_add > 0xffff || end_add < start_add + 2 {
-                return Err(LoadError::SegmentAddress);
-            }
-
-            let seg_beg = offset + 4;
-            let seg_end = seg_beg + (end_add - start_add) + 1;
-            segs.push(Segment {
-                start: start_add,
-                end:   end_add,
-            });
-            self.mem[start_add..=end_add].clone_from_slice(&buf[seg_beg..seg_end]);
-            offset = seg_end;
-        }
-        Ok(segs)
-    }
-
-    pub fn step(&mut self) {
-        let ins = &INSTRUCTIONS[self.mem[self.pc as usize] as usize];
-        (ins.ef)(self); // call emu fn
-        self.pc += ins.step; // update program counter
-    }
-
-    //#[inline(always)]
+    #[inline(always)]
     fn set_nz_reg(&mut self, r: u8) {
         if r == 0 {
             self.status |= 1 << Status::Z as u8;
@@ -283,22 +281,17 @@ impl<'a> CPU {
         }
     }
 
-    #[inline(always)]
-    pub fn get_instruction(&self) -> Instruction {
-        INSTRUCTIONS[self.mem[self.pc as usize] as usize]
-    }
-
-    pub fn emu_err(&mut self) {
-        let o = self.get_instruction();
-        panic!(format!(
-            "Emulation for instruction {} not implemented!",
-            o.mnemonic
-        ));
-    }
-
     ///////////////////////////////////////////////////////////////
     ///            instruction emulation functions              ///
     ///////////////////////////////////////////////////////////////
+
+    // unhandled instruction
+    pub fn emu_err(&mut self) {
+        panic!(format!(
+            "Emulation for instruction {} not implemented!",
+            INSTRUCTIONS[self.mem[self.pc as usize] as usize].mnemonic
+        ));
+    }
 
     // bitwise logic
     fn emu_and(&mut self) {

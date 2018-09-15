@@ -54,7 +54,7 @@ pub fn trace(cpu: &mut CPU, start: u16, count: u32) {
     cpu.set_pc(start);
 
     for i in 1..=count {
-        let label = b.get(&(cpu.pc as usize)).unwrap_or(&defstr);
+        let label = b.get(&(cpu.get_pc())).unwrap_or(&defstr);
         println!("{:8} {:04}:{}", label, i, &cpu);
         thread::sleep(delay);
         cpu.step();
