@@ -261,14 +261,16 @@ impl<'a> CPU {
             Iny => self.mem_ptr(self.mem[self.pc as usize + 1] as usize) + self.mem[Y_REG] as usize,
             Zpx => (self.mem[self.pc as usize + 1]).wrapping_add(self.mem[X_REG]) as usize,
             Zpy => (self.mem[self.pc as usize + 1]).wrapping_add(self.mem[Y_REG]) as usize,
-            // page wrapping for abx/y
+            // page wrapping for abx/y?
             Abx => {
-                let addr = self.get_op_add();
-                addr & 0xff00 | (addr as u8).wrapping_add(self.mem[X_REG]) as usize
+                // let addr = self.get_op_add();
+                // addr & 0xff00 | (addr as u8).wrapping_add(self.mem[X_REG]) as usize
+                self.get_op_add() + self.mem[X_REG] as usize
             }
             Aby => {
-                let addr = self.get_op_add();
-                addr & 0xff00 | (addr as u8).wrapping_add(self.mem[Y_REG]) as usize
+                // let addr = self.get_op_add();
+                // addr & 0xff00 | (addr as u8).wrapping_add(self.mem[Y_REG]) as usize
+                self.get_op_add() + self.mem[Y_REG] as usize
             }
             Acc => A_REG,
             _ => panic!("Instruction mode doesn't target an Addess!"),
