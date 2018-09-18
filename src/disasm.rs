@@ -22,6 +22,7 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize) {
         ins = &INSTRUCTIONS[mem[pc] as usize];
         // check for a label matching this address
         let label = b.get(&pc).unwrap_or(&defstr);
+        // use available label for branch instructions
         if ins.isbr {
             match ins.mode {
                 Modes::Rel => target = cpu.get_br_addr(pc as isize),

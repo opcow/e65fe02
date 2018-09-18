@@ -71,7 +71,6 @@ fn main() -> io::Result<()> {
 
     // count_implemented();
     // println!();
-    println!("{:?}", b"foo");
 
     if matches.is_present("disassemble") {
         print_ascii(&";;; begin disassembley ;;;\n");
@@ -79,8 +78,9 @@ fn main() -> io::Result<()> {
         print_ascii(&"    LIST ON\n\n");
         print_ascii(&"START\n");
 
+        // blindly assuming all segments are code
         for seg in &segs {
-            // assuming all segments are code
+            // first_pass finds jump/branch addresses and creates labels
             disasm::first_pass(&cpu, seg.start, seg.end);
             disasm::disasm(&cpu, seg.start, seg.end);
         }

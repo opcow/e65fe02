@@ -1,3 +1,4 @@
+extern crate ascii;
 use ascii::{AsciiString, ToAsciiChar};
 // use std::io::prelude::*;
 use std::io::{stdout, Write};

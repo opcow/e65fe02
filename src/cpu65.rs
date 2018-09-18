@@ -143,10 +143,6 @@ impl<'a> CPU {
         self.pc as usize
     }
 
-    pub fn get_status(&self) -> u8 {
-        self.status
-    }
-
     // gets the absolute address of a relative branch
     #[inline(always)]
     pub fn get_br_addr(&self, pc: isize) -> usize {
@@ -420,6 +416,7 @@ impl<'a> CPU {
             0xb0 => status = (self.status & (1 << Status::C as u8)) != 0,
             0xd0 => status = (self.status & (1 << Status::Z as u8)) == 0,
             0xf0 => status = (self.status & (1 << Status::Z as u8)) != 0,
+            // should never happen
             _ => panic!("Encountered unknown branch opcode!"),
         }
         if status {
@@ -653,6 +650,7 @@ pub struct Instruction {
     pub mnemonic: &'static str,
 }
 
+// formatting for printing an instruction
 pub fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
     match m {
         Imm => format!("#${:>02X}", ops[0]),
