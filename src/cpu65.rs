@@ -59,6 +59,11 @@ enum Status {
     N, // negative
 }
 
+enum CpuMem<'a> {
+    Mem(&'a [u8]),
+    None,
+}
+
 // CPU virtual 6502 processor + memory
 pub struct CPU {
     status: u8,
@@ -121,7 +126,7 @@ fn status_as_string(status: u8) -> String {
 impl<'a> CPU {
     pub fn new() -> CPU {
         CPU {
-            // registers a, x, y are stored in extra byte of memory
+            // registers a, x, y are stored in extra bytes of memory
             // this makes Addessing modes easier
             // (or could be a huge mistake)
             status: 0,
@@ -145,21 +150,22 @@ impl<'a> CPU {
 
     // gets the absolute address of a relative branch
     #[inline(always)]
-    pub fn get_br_addr(&self, pc: isize) -> usize {
+    pub fn branch_addr(&self, pc: isize) -> usize {
         (self.mem[pc as usize + 1] as i8 as isize + pc as isize + 2) as usize
     }
 
-    pub fn get_mem_mut(&mut self) -> &mut [u8] {
+    // get the indirect 16-bit address as usize
+    #[inline(always)]
+    pub fn mem_ptr(&self, a: usize) -> usize {
+        self.mem[a] as usize | (self.mem[a + 1] as usize) << 8
+    }
+
+    pub fn mem_mut(&mut self) -> &mut [u8] {
         &mut self.mem
     }
 
-    pub fn get_mem(&self) -> &[u8] {
+    pub fn mem(&self) -> &[u8] {
         &self.mem
-    }
-
-    #[inline(always)]
-    pub fn get_mem_usize(&self, a: usize) -> usize {
-        self.mem[a] as usize | (self.mem[a + 1] as usize) << 8
     }
 
     pub fn step(&mut self) {
@@ -239,7 +245,6 @@ impl<'a> CPU {
     }
 
     fn get_eff_add(&self) -> usize {
-        // fix me zero page wrapping
         match INSTRUCTIONS[self.mem[self.pc as usize] as usize].mode {
             Imm => self.pc as usize + 1,
             Zpg => self.mem[self.pc as usize + 1] as usize,
@@ -253,14 +258,18 @@ impl<'a> CPU {
                         as usize)
                         << 8
             }
-            Iny => {
-                self.get_mem_usize(self.mem[self.pc as usize + 1] as usize)
-                    + self.mem[Y_REG] as usize
-            }
+            Iny => self.mem_ptr(self.mem[self.pc as usize + 1] as usize) + self.mem[Y_REG] as usize,
             Zpx => (self.mem[self.pc as usize + 1]).wrapping_add(self.mem[X_REG]) as usize,
             Zpy => (self.mem[self.pc as usize + 1]).wrapping_add(self.mem[Y_REG]) as usize,
-            Abx => self.get_op_add() + self.mem[X_REG] as usize,
-            Aby => self.get_op_add() + self.mem[Y_REG] as usize,
+            // page wrapping for abx/y
+            Abx => {
+                let addr = self.get_op_add();
+                addr & 0xff00 | (addr as u8).wrapping_add(self.mem[X_REG]) as usize
+            }
+            Aby => {
+                let addr = self.get_op_add();
+                addr & 0xff00 | (addr as u8).wrapping_add(self.mem[Y_REG]) as usize
+            }
             Acc => A_REG,
             _ => panic!("Instruction mode doesn't target an Addess!"),
         }
@@ -406,19 +415,18 @@ impl<'a> CPU {
 
     // flow control operations
     fn emu_bra(&mut self) {
-        let status: bool;
-        match self.mem[self.pc as usize] {
-            0x10 => status = (self.status & (1 << Status::N as u8)) == 0,
-            0x30 => status = (self.status & (1 << Status::N as u8)) != 0,
-            0x50 => status = (self.status & (1 << Status::V as u8)) == 0,
-            0x70 => status = (self.status & (1 << Status::V as u8)) != 0,
-            0x90 => status = (self.status & (1 << Status::C as u8)) == 0,
-            0xb0 => status = (self.status & (1 << Status::C as u8)) != 0,
-            0xd0 => status = (self.status & (1 << Status::Z as u8)) == 0,
-            0xf0 => status = (self.status & (1 << Status::Z as u8)) != 0,
+        let status = match self.mem[self.pc as usize] {
+            0x10 => (self.status & (1 << Status::N as u8)) == 0,
+            0x30 => (self.status & (1 << Status::N as u8)) != 0,
+            0x50 => (self.status & (1 << Status::V as u8)) == 0,
+            0x70 => (self.status & (1 << Status::V as u8)) != 0,
+            0x90 => (self.status & (1 << Status::C as u8)) == 0,
+            0xb0 => (self.status & (1 << Status::C as u8)) != 0,
+            0xd0 => (self.status & (1 << Status::Z as u8)) == 0,
+            0xf0 => (self.status & (1 << Status::Z as u8)) != 0,
             // should never happen
             _ => panic!("Encountered unknown branch opcode!"),
-        }
+        };
         if status {
             self.pc =
                 2 + ((self.pc as i16) + i16::from(self.mem[self.pc as usize + 1] as i8)) as u16;

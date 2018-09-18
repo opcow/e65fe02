@@ -13,9 +13,8 @@ lazy_static! {
 pub fn disasm(cpu: &CPU, start: usize, end: usize) {
     let mut ins: &Instruction;
     let mut pc = start;
-    let mut target: usize; // target of instruction
     let defstr = String::from("");
-    let mem = cpu.get_mem();
+    let mem = cpu.mem();
     let b = BRAMAP.lock().unwrap();
 
     while pc <= end {
@@ -24,10 +23,10 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize) {
         let label = b.get(&pc).unwrap_or(&defstr);
         // use available label for branch instructions
         if ins.isbr {
-            match ins.mode {
-                Modes::Rel => target = cpu.get_br_addr(pc as isize),
-                _ => target = cpu.get_mem_usize(pc + 1),
-            }
+            let target = match ins.mode {
+                Modes::Rel => cpu.branch_addr(pc as isize),
+                _ => cpu.mem_ptr(pc + 1),
+            };
             print_ascii(&format!(
                 "{}    {} LOC{:04X}\n",
                 label, ins.mnemonic, target
@@ -66,7 +65,7 @@ pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize) {
     let mut ins: &Instruction;
     let mut target: usize;
     let mut b = BRAMAP.lock().unwrap(); // for storing branch/jump
-    let mem = cpu.get_mem();
+    let mem = cpu.mem();
 
     while pc <= end {
         ins = &INSTRUCTIONS[mem[pc] as usize];
@@ -75,13 +74,13 @@ pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize) {
         if ins.isbr {
             match ins.mode {
                 Modes::Rel => {
-                    target = cpu.get_br_addr(pc as isize);
+                    target = cpu.branch_addr(pc as isize);
                     if !b.contains_key(&target) {
                         b.insert(target, format!("LOC{:04X}\n", target));
                     }
                 }
                 _ => {
-                    target = cpu.get_mem_usize(pc + 1);
+                    target = cpu.mem_ptr(pc + 1);
                     if !b.contains_key(&target) {
                         b.insert(target, format!("LOC{:04X}\n", target));
                     }
