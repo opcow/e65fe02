@@ -1,4 +1,4 @@
-use crate::cpu65::Modes::*;
+use crate::cpu65::Modes::{Abs, Abx, Aby, Acc, Imm, Imp, Ind, Inx, Iny, Rel, Unk, Zpg, Zpx, Zpy};
 use std::fmt;
 use std::io::{Error, ErrorKind};
 
@@ -64,19 +64,33 @@ enum CpuMem<'a> {
     None,
 }
 
-// CPU virtual 6502 processor + memory
+/// `CPU` virtual 6502 processor + memory
 pub struct CPU {
+    /// 6502 status register
     status: u8,
-    sp:     u8,
-    pc:     u16,
-    mem:    [u8; MEM_SIZE],
-    ins:    [Instruction; 256],
+    /// 6502 stack pointer
+    sp: u8,
+    /// 6502 program counter
+    pc: u16,
+    /// the 64k memory space
+    mem: [u8; MEM_SIZE],
+    /// 6502 instructions
+    ins: [Instruction; 256],
 }
 
+/// Constructs a new `CPU`.
+///
+/// # Examples
+///
+/// ```
+/// use cpu65::CPU;
+///
+/// let mut cpu = cpu65::CPU::new();
+/// ```
 impl fmt::Display for CPU {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ins = INSTRUCTIONS[self.mem[self.pc as usize] as usize];
-        let opstr = get_format(
+        let opstr = CPU::get_format(
             ins.mode,
             self.pc as usize,
             &self.mem[(self.pc as usize + 1)..=(self.pc as usize + 2)],
@@ -107,23 +121,19 @@ impl fmt::Display for CPU {
 }
 
 fn status_as_string(status: u8) -> String {
-    let s1 = ['-', '-', '-', '-', '-', '-', '-', '-'];
-    let s2 = ['N', 'V', 'U', 'B', 'D', 'I', 'Z', 'C'];
-    let mut ss = String::from("");
+    let mut s = ['N', 'V', 'U', 'B', 'D', 'I', 'Z', 'C'];
 
     let mut bit = 1 << 7;
-    for i in 0..8 {
-        if status & bit != 0 {
-            ss.push(s2[i]);
-        } else {
-            ss.push(s1[i]);
+    for i in s.iter_mut() {
+        if status & bit == 0 {
+            *i = '_';
         }
         bit >>= 1;
     }
-    ss
+    s.iter().collect()
 }
 
-impl<'a> CPU {
+impl CPU {
     pub fn new() -> CPU {
         CPU {
             // registers a, x, y are stored in extra bytes of memory
@@ -277,17 +287,6 @@ impl<'a> CPU {
         }
     }
 
-    #[inline(always)]
-    fn set_nz_reg(&mut self, r: u8) {
-        if r == 0 {
-            self.status |= 1 << Status::Z as u8;
-            self.status &= !(1 << (Status::N as u8));
-        } else {
-            self.status &= !(1 << (Status::Z as u8));
-            self.status = self.status & 0x7f | (r & 0x80);
-        }
-    }
-
     ///////////////////////////////////////////////////////////////
     ///            instruction emulation functions              ///
     ///////////////////////////////////////////////////////////////
@@ -342,38 +341,38 @@ impl<'a> CPU {
     // register-to-register transfer operations
     fn emu_tax(&mut self) {
         self.mem[X_REG] = self.mem[A_REG];
-        self.set_nz_reg(self.mem[X_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[X_REG]);
     }
 
     fn emu_tay(&mut self) {
         self.mem[Y_REG] = self.mem[A_REG];
-        self.set_nz_reg(self.mem[Y_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[Y_REG]);
     }
 
     fn emu_txa(&mut self) {
         self.mem[A_REG] = self.mem[X_REG];
-        self.set_nz_reg(self.mem[A_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[A_REG]);
     }
 
     fn emu_tya(&mut self) {
         self.mem[A_REG] = self.mem[Y_REG];
-        self.set_nz_reg(self.mem[A_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[A_REG]);
     }
 
     // load and store operations
     fn emu_lda(&mut self) {
         self.mem[A_REG] = self.mem[self.get_eff_add()];
-        self.set_nz_reg(self.mem[A_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[A_REG]);
     }
 
     fn emu_ldx(&mut self) {
         self.mem[X_REG] = self.mem[self.get_eff_add()];
-        self.set_nz_reg(self.mem[X_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[X_REG]);
     }
 
     fn emu_ldy(&mut self) {
         self.mem[Y_REG] = self.mem[self.get_eff_add()];
-        self.set_nz_reg(self.mem[Y_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[Y_REG]);
     }
 
     fn emu_sta(&mut self) {
@@ -463,33 +462,33 @@ impl<'a> CPU {
     fn emu_dec(&mut self) {
         let target = self.get_eff_add();
         self.mem[target] = self.mem[target].wrapping_sub(1);
-        self.set_nz_reg(self.mem[target]);
+        CPU::set_nz_reg(&mut self.status, self.mem[target]);
     }
 
     fn emu_dex(&mut self) {
         self.mem[X_REG] = self.mem[X_REG].wrapping_sub(1);
-        self.set_nz_reg(self.mem[X_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[X_REG]);
     }
 
     fn emu_dey(&mut self) {
         self.mem[Y_REG] = self.mem[Y_REG].wrapping_sub(1);
-        self.set_nz_reg(self.mem[Y_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[Y_REG]);
     }
 
     fn emu_inc(&mut self) {
         let target = self.get_eff_add();
         self.mem[target] = self.mem[target].wrapping_sub(1);
-        self.set_nz_reg(self.mem[target]);
+        CPU::set_nz_reg(&mut self.status, self.mem[target]);
     }
 
     fn emu_inx(&mut self) {
         self.mem[X_REG] = self.mem[X_REG].wrapping_add(1);
-        self.set_nz_reg(self.mem[X_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[X_REG]);
     }
 
     fn emu_iny(&mut self) {
         self.mem[Y_REG] = self.mem[Y_REG].wrapping_add(1);
-        self.set_nz_reg(self.mem[Y_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[Y_REG]);
     }
 
     // addition and subtraction
@@ -511,7 +510,7 @@ impl<'a> CPU {
             self.status &= !(1 << (Status::V as u8))
         }
         self.mem[A_REG] = r.0;
-        self.set_nz_reg(self.mem[A_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[A_REG]);
     }
 
     fn emu_sbc(&mut self) {
@@ -531,13 +530,13 @@ impl<'a> CPU {
             self.status &= !(1 << (Status::V as u8))
         }
         self.mem[A_REG] = r.0;
-        self.set_nz_reg(self.mem[A_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[A_REG]);
     }
 
     // comparison operations
     fn emu_cmp(&mut self) {
         let r: i8 = self.mem[A_REG] as i8 - self.mem[self.get_eff_add()] as i8;
-        self.set_nz_reg(r as u8);
+        CPU::set_nz_reg(&mut self.status, r as u8);
         if r >= 0 {
             self.status |= (Status::C as u8) << 1
         } else {
@@ -547,7 +546,7 @@ impl<'a> CPU {
 
     fn emu_cpx(&mut self) {
         let r: i8 = self.mem[X_REG] as i8 - self.mem[self.get_eff_add()] as i8;
-        self.set_nz_reg(r as u8);
+        CPU::set_nz_reg(&mut self.status, r as u8);
         if r >= 0 {
             self.status |= (Status::C as u8) << 1
         } else {
@@ -557,7 +556,7 @@ impl<'a> CPU {
 
     fn emu_cpy(&mut self) {
         let r: i8 = self.mem[Y_REG] as i8 - self.mem[self.get_eff_add()] as i8;
-        self.set_nz_reg(r as u8);
+        CPU::set_nz_reg(&mut self.status, r as u8);
         if r >= 0 {
             self.status |= (Status::C as u8) << 1
         } else {
@@ -580,7 +579,7 @@ impl<'a> CPU {
         self.sp += 1;
         self.mem[A_REG] = self.mem[0x100 + self.sp as usize];
         // let r = self.mem[A_REG];
-        self.set_nz_reg(self.mem[A_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[A_REG]);
     }
 
     fn emu_plp(&mut self) {
@@ -590,7 +589,7 @@ impl<'a> CPU {
 
     fn emu_tsx(&mut self) {
         self.mem[X_REG] = self.sp;
-        self.set_nz_reg(self.mem[X_REG]);
+        CPU::set_nz_reg(&mut self.status, self.mem[X_REG]);
     }
 
     fn emu_txs(&mut self) {
@@ -649,6 +648,42 @@ impl<'a> CPU {
     fn emu_nop(&mut self) {}
 }
 
+impl CPU {
+    // formatting for printing an instruction
+    pub fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
+        match m {
+            Imm => format!("#${:>02X}", ops[0]),
+            Zpg => format!("${:>02X}", ops[0]),
+            Zpx => format!("${:>02X},X", ops[0]),
+            Zpy => format!("${:>02X},Y", ops[0]),
+            Abs => format!("${:>02X}{:>02X}", ops[1], ops[0]),
+            Abx => format!("${:>02X}{:>02X},X", ops[1], ops[0]),
+            Aby => format!("${:>02X}{:>02X},Y", ops[1], ops[0]),
+            Ind => format!("(${:>02X}{:>02X})", ops[1], ops[0]),
+            Inx => format!("(${:>02X},X)", ops[0]),
+            Iny => format!("(${:>02X}),Y", ops[0]),
+            Acc => "A".to_string(),
+            Rel => format!(
+                "${:>04X}",
+                (ops[0] as i8 as isize + addr as isize + 2) as usize
+            ),
+            Imp => "".to_string(),
+            Unk => "---".to_string(),
+        }
+    }
+
+    #[inline(always)]
+    fn set_nz_reg(status: &mut u8, r: u8) {
+        if r == 0 {
+            *status |= 1 << Status::Z as u8;
+            *status &= !(1 << (Status::N as u8));
+        } else {
+            *status &= !(1 << (Status::Z as u8));
+            *status = *status & 0x7f | (r & 0x80);
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct Instruction {
     pub opcode:   i32,          // the opcode
@@ -658,29 +693,6 @@ pub struct Instruction {
     pub mode:     Modes,
     pub isbr:     bool,
     pub mnemonic: &'static str,
-}
-
-// formatting for printing an instruction
-pub fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
-    match m {
-        Imm => format!("#${:>02X}", ops[0]),
-        Zpg => format!("${:>02X}", ops[0]),
-        Zpx => format!("${:>02X},X", ops[0]),
-        Zpy => format!("${:>02X},Y", ops[0]),
-        Abs => format!("${:>02X}{:>02X}", ops[1], ops[0]),
-        Abx => format!("${:>02X}{:>02X},X", ops[1], ops[0]),
-        Aby => format!("${:>02X}{:>02X},Y", ops[1], ops[0]),
-        Ind => format!("(${:>02X}{:>02X})", ops[1], ops[0]),
-        Inx => format!("(${:>02X},X)", ops[0]),
-        Iny => format!("(${:>02X}),Y", ops[0]),
-        Acc => "A".to_string(),
-        Rel => format!(
-            "${:>04X}",
-            (ops[0] as i8 as isize + addr as isize + 2) as usize
-        ),
-        Imp => "".to_string(),
-        Unk => "---".to_string(),
-    }
 }
 
 // use cpu65::Modes::*;

@@ -1,26 +1,20 @@
-use super::cpu65::{get_format, Instruction, Modes, CPU, INSTRUCTIONS};
+use super::cpu65::{Instruction, Modes, CPU, INSTRUCTIONS};
 use crate::prascii::print_ascii;
 use std::collections::HashMap;
-use std::sync::Mutex;
 
-lazy_static! {
-    static ref BRAMAP: Mutex<HashMap<usize, String>> = {
-        let m = HashMap::new();
-        Mutex::new(m)
-    };
-}
-
-pub fn disasm(cpu: &CPU, start: usize, end: usize) {
+pub fn disasm(cpu: &CPU, start: usize, end: usize, label_map: Option<&HashMap<usize, String>>) {
     let mut ins: &Instruction;
     let mut pc = start;
     let defstr = String::from("");
     let mem = cpu.mem();
-    let b = BRAMAP.lock().unwrap();
 
     while pc <= end {
         ins = &INSTRUCTIONS[mem[pc] as usize];
         // check for a label matching this address
-        let label = b.get(&pc).unwrap_or(&defstr);
+        let label = match label_map {
+            Some(m) => m.get(&pc).unwrap_or(&defstr),
+            None => &defstr,
+        };
         // use available label for branch instructions
         if ins.isbr {
             let target = match ins.mode {
@@ -36,7 +30,7 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize) {
                 "{}    {} {}\n",
                 label,
                 ins.mnemonic,
-                get_format(ins.mode, pc, &mem[(pc as usize + 1)..=(pc as usize + 2)],)
+                CPU::get_format(ins.mode, pc, &mem[(pc as usize + 1)..=(pc as usize + 2)],)
             ));
         }
         pc += ins.ops as usize + 1;
@@ -44,9 +38,8 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize) {
     print_ascii("\n");
 }
 
-pub fn trace(cpu: &mut CPU, start: u16, count: u32) {
+pub fn trace(cpu: &mut CPU, start: u16, count: u32, label_map: Option<&HashMap<usize, String>>) {
     let defstr = String::from("");
-    let b = BRAMAP.lock().unwrap();
 
     use std::{thread, time};
     let delay = time::Duration::from_millis(200);
@@ -54,17 +47,18 @@ pub fn trace(cpu: &mut CPU, start: u16, count: u32) {
     cpu.set_pc(start);
 
     for i in 1..=count {
-        let label = b.get(&(cpu.get_pc())).unwrap_or(&defstr);
+        let label = match label_map {
+            Some(m) => m.get(&cpu.get_pc()).unwrap_or(&defstr),
+            None => &defstr,
+        };
         println!("{:8} {:04}:{}", label, i, &cpu);
         thread::sleep(delay);
         cpu.step();
     }
 }
 
-pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize) {
+pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize, label_map: &mut HashMap<usize, String>) {
     let mut ins: &Instruction;
-    let mut target: usize;
-    let mut b = BRAMAP.lock().unwrap(); // for storing branch/jump
     let mem = cpu.mem();
 
     while pc <= end {
@@ -72,38 +66,14 @@ pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize) {
         // if the instuction is a jump or a branch save the address
         // as a label name for subsequent passes
         if ins.isbr {
-            match ins.mode {
-                Modes::Rel => {
-                    target = cpu.branch_addr(pc as isize);
-                    if !b.contains_key(&target) {
-                        b.insert(target, format!("LOC{:04X}\n", target));
-                    }
-                }
-                _ => {
-                    target = cpu.mem_ptr(pc + 1);
-                    if !b.contains_key(&target) {
-                        b.insert(target, format!("LOC{:04X}\n", target));
-                    }
-                }
-            }
+            let target = match ins.mode {
+                Modes::Rel => cpu.branch_addr(pc as isize),
+                _ => cpu.mem_ptr(pc + 1),
+            };
+            label_map
+                .entry(target)
+                .or_insert_with(|| format!("LOC{:04X}\n", target));
         }
         pc += ins.ops as usize + 1;
     }
-}
-
-fn status_as_string(status: u8) -> String {
-    let s1 = ['-', '-', '-', '-', '-', '-', '-', '-'];
-    let s2 = ['N', 'V', 'U', 'B', 'D', 'I', 'Z', 'C'];
-    let mut ss = String::from("");
-
-    let mut bit = 1 << 7;
-    for i in 0..8 {
-        if status & bit != 0 {
-            ss.push(s2[i]);
-        } else {
-            ss.push(s1[i]);
-        }
-        bit >>= 1;
-    }
-    ss
 }

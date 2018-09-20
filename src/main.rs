@@ -1,11 +1,9 @@
 // #![feature(rust_2018_preview)]
+// #![feature(crate_in_paths)]
 #![allow(dead_code)]
-#[macro_use]
-extern crate lazy_static;
+#![feature(nll)]
 #[macro_use]
 extern crate clap;
-
-//#![feature(rust_2018_preview)]
 
 mod cpu65;
 mod disasm;
@@ -16,6 +14,7 @@ use crate::cpu65::CPU;
 use crate::cpu65::INSTRUCTIONS;
 use crate::prascii::print_ascii;
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 
@@ -62,11 +61,8 @@ fn main() -> io::Result<()> {
         .unwrap_or(5);
 
     let fname = matches.value_of("ifile").unwrap();
-
     let buf = read_program(fname)?;
-
     let mut cpu = cpu65::CPU::new();
-
     let segs = cpu.load(&buf)?;
 
     // count_implemented();
@@ -78,16 +74,18 @@ fn main() -> io::Result<()> {
         print_ascii(&"    LIST ON\n\n");
         print_ascii(&"START\n");
 
+        let mut map: HashMap<usize, String> = HashMap::new();
         // blindly assuming all segments are code
         for seg in &segs {
             // first_pass finds jump/branch addresses and creates labels
-            disasm::first_pass(&cpu, seg.start, seg.end);
-            disasm::disasm(&cpu, seg.start, seg.end);
+            disasm::first_pass(&cpu, seg.start, seg.end, &mut map);
+            disasm::disasm(&cpu, seg.start, seg.end, Some(&map));
+            // disasm::disasm(&cpu, seg.start, seg.end, None);
         }
     }
     if matches.is_present("trace") {
         let start = segs[0].start as u16;
-        disasm::trace(&mut cpu, start, steps);
+        disasm::trace(&mut cpu, start, steps, None);
     }
 
     // let fname = "mem.bin";
