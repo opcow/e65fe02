@@ -101,7 +101,8 @@ impl fmt::Display for CPU {
                 self.mem[self.pc as usize + 1],
                 self.mem[self.pc as usize + 2],
             ),
-            _ => format!("{:>02X}", self.mem[self.pc as usize + 1],),
+            1 => format!("{:>02X}", self.mem[self.pc as usize + 1],),
+            _ => format!(""),
         };
 
         write!(
