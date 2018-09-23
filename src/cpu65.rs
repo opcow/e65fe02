@@ -1,4 +1,4 @@
-use crate::cpu65::Modes::{Abs, Abx, Aby, Acc, Imm, Imp, Ind, Inx, Iny, Rel, Unk, Zpg, Zpx, Zpy};
+use crate::cpu65::Mode::{Abs, Abx, Aby, Acc, Imm, Imp, Ind, Inx, Iny, Rel, Unk, Zpg, Zpx, Zpy};
 
 use std::fmt;
 use std::io::{Error, ErrorKind};
@@ -32,7 +32,7 @@ pub struct Segment {
 
 // 6502 instruction modes
 #[derive(Debug, Copy, Clone)]
-pub enum Modes {
+pub enum Mode {
     Imm, // immediate mode
     Abs, // absolute
     Abx, // absolute x
@@ -104,7 +104,7 @@ impl fmt::Display for CPU {
 
         write!(
             f,
-            "{:>04X} {} {:<10}{:>02X} {:7}|{}| A={:>02X} X={:>02X} Y={:>02X}",
+            "{:>04X} {} {:<10}{:>02X} {:7}|{}| A={:>02X} X={:>02X} Y={:>02X} SP={:>02X}",
             self.pc,
             ins.mnemonic,
             opstr,
@@ -113,7 +113,8 @@ impl fmt::Display for CPU {
             status_as_string(self.status),
             self.mem[A_REG],
             self.mem[X_REG],
-            self.mem[Y_REG]
+            self.mem[Y_REG],
+            self.sp
         )
     }
 }
@@ -479,17 +480,18 @@ impl CPU {
     // addition and subtraction
     fn emu_adc(&mut self) {
         //fix me check adc and sbc for correctness
-        let r = self.mem[A_REG].overflowing_add(
-            self.mem[self.get_eff_add()] + if self.check_status(Flag::C) { 1 } else { 0 },
-        );
+        let target = self.get_eff_add();
+        let r = self.mem[A_REG]
+            .overflowing_add(self.mem[target] + if self.check_status(Flag::C) { 1 } else { 0 });
         // set carry if wraps
         if r.1 {
             self.status |= Flag::C as u8
         } else {
             self.status &= !(Flag::C as u8)
         }
-        // set overflow if sign bit flipped
-        if (r.0 ^ self.mem[A_REG]) & 0x80 != 0 {
+        // set overflow
+        if (self.mem[A_REG] ^ r.0) & (self.mem[target] ^ r.0) & 0x80 != 0 {
+            // if (r.0 ^ self.mem[A_REG]) & 0x80 != 0 {
             self.status |= Flag::V as u8
         } else {
             self.status &= !(Flag::V as u8)
@@ -499,17 +501,17 @@ impl CPU {
     }
 
     fn emu_sbc(&mut self) {
-        let r = self.mem[A_REG].overflowing_sub(
-            self.mem[self.get_eff_add()] + if self.check_status(Flag::C) { 0 } else { 1 },
-        );
+        let target = self.get_eff_add();
+        let r = self.mem[A_REG]
+            .overflowing_sub(self.mem[target] + if self.check_status(Flag::C) { 0 } else { 1 });
         // set carry if wraps
         if r.1 {
             self.status |= Flag::C as u8
         } else {
             self.status &= !(Flag::C as u8)
         }
-        // set overflow if sign bit flipped
-        if (r.0 ^ self.mem[A_REG]) & 0x80 == 0 {
+        // set overflow
+        if (self.mem[A_REG] ^ r.0) & ((self.mem[target] ^ 0xff) ^ r.0) & 0x80 != 0 {
             self.status |= Flag::V as u8
         } else {
             self.status &= !(Flag::V as u8)
@@ -631,7 +633,7 @@ impl CPU {
 
 impl CPU {
     // formatting for printing an instruction
-    pub fn get_format(m: Modes, addr: usize, ops: &[u8]) -> String {
+    pub fn get_format(m: Mode, addr: usize, ops: &[u8]) -> String {
         match m {
             Imm => format!("#${:>02X}", ops[0]),
             Zpg => format!("${:>02X}", ops[0]),
@@ -671,7 +673,7 @@ pub struct Instruction {
     pub ef: fn(&mut CPU), // the thing that gets the result
     pub step: u16,        // how much to move the pc after this instruction
     pub ops: i32,
-    pub mode: Modes,
+    pub mode: Mode,
     pub isbr: bool,
     pub mnemonic: &'static str,
 }

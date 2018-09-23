@@ -1,4 +1,4 @@
-use super::cpu65::{Instruction, Modes, CPU, INSTRUCTIONS};
+use super::cpu65::{Instruction, Mode, CPU, INSTRUCTIONS};
 use crate::prascii::print_ascii;
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ pub fn disasm(cpu: &CPU, start: usize, end: usize, label_map: Option<&HashMap<us
         // use available label for branch instructions
         if ins.isbr {
             let target = match ins.mode {
-                Modes::Rel => cpu.branch_addr(pc as isize),
+                Mode::Rel => cpu.branch_addr(pc as isize),
                 _ => cpu.mem_ptr(pc + 1),
             };
             print_ascii(&format!(
@@ -67,7 +67,7 @@ pub fn first_pass(cpu: &CPU, mut pc: usize, end: usize, label_map: &mut HashMap<
         // as a label name for subsequent passes
         if ins.isbr {
             let target = match ins.mode {
-                Modes::Rel => cpu.branch_addr(pc as isize),
+                Mode::Rel => cpu.branch_addr(pc as isize),
                 _ => cpu.mem_ptr(pc + 1),
             };
             label_map
