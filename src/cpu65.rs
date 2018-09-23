@@ -56,14 +56,9 @@ enum Flag {
     I = 1 << 2, // interrupt
     D = 1 << 3, // decimal
     B = 1 << 4, // break
-    U = 1 << 5, // unused
+    // U = 1 << 5, // unused
     V = 1 << 6, // overflow
     N = 1 << 7, // negative
-}
-
-enum CpuMem<'a> {
-    Mem(&'a [u8]),
-    None,
 }
 
 /// `CPU` virtual 6502 processor + memory
@@ -76,8 +71,8 @@ pub struct CPU {
     pc: u16,
     /// the 64k memory space
     mem: [u8; MEM_SIZE],
-    /// 6502 instructions
-    ins: [Instruction; 256],
+    // 6502 instructions
+    // ins: [Instruction; 256],
 }
 
 /// Constructs a new `CPU`.
@@ -104,7 +99,7 @@ impl fmt::Display for CPU {
                 self.mem[self.pc as usize + 2],
             ),
             1 => format!("{:>02X}", self.mem[self.pc as usize + 1],),
-            _ => format!(""),
+            _ => "".to_string(),
         };
 
         write!(
@@ -146,7 +141,7 @@ impl CPU {
             sp: 0xff,
             pc: 0,
             mem: [0; MEM_SIZE],
-            ins: INSTRUCTIONS,
+            // ins: INSTRUCTIONS,
         }
     }
 
@@ -173,9 +168,9 @@ impl CPU {
         self.mem[a] as usize | (self.mem[a + 1] as usize) << 8
     }
 
-    pub fn mem_mut(&mut self) -> &mut [u8] {
-        &mut self.mem
-    }
+    // pub fn mem_mut(&mut self) -> &mut [u8] {
+    //     &mut self.mem
+    // }
 
     pub fn mem(&self) -> &[u8] {
         &self.mem
@@ -613,10 +608,6 @@ impl CPU {
 
     fn emu_sei(&mut self) {
         self.status |= Flag::I as u8;
-    }
-
-    fn emu_sev(&mut self) {
-        self.status |= Flag::V as u8;
     }
 
     // interrupt related

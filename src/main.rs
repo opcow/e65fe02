@@ -1,6 +1,6 @@
 // #![feature(rust_2018_preview)]
 // #![feature(crate_in_paths)]
-#![allow(dead_code)]
+//#![allow(dead_code)]
 // #![feature(nll)]
 #[macro_use]
 extern crate clap;
@@ -10,8 +10,6 @@ mod disasm;
 mod prascii;
 
 use clap::{App, Arg};
-use crate::cpu65::CPU;
-use crate::cpu65::INSTRUCTIONS;
 use crate::prascii::print_ascii;
 
 use std::collections::HashMap;
@@ -94,15 +92,15 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn count_implemented() {
-    // count implemented
-    let n = CPU::emu_err as *const fn(&mut CPU);
-    let k = INSTRUCTIONS
-        .iter()
-        .filter(|f| f.ef as *const fn(&mut CPU) != n)
-        .count();
-    println!("{} instructions implememnted!", k);
-}
+// fn count_implemented() {
+//     // count implemented
+//     let n = CPU::emu_err as *const fn(&mut CPU);
+//     let k = INSTRUCTIONS
+//         .iter()
+//         .filter(|f| f.ef as *const fn(&mut CPU) != n)
+//         .count();
+//     println!("{} instructions implememnted!", k);
+// }
 
 fn read_program(fname: &str) -> Result<Vec<u8>, io::Error> {
     use std::io::{Error, ErrorKind};
