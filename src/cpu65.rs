@@ -184,8 +184,8 @@ impl CPU {
     }
 
     pub fn load(&mut self, buf: &[u8], load_add: Option<usize>) -> Result<Vec<Segment>, LoadError> {
-        let start_add: usize;
-        let end_add: usize;
+        let mut start_add: usize;
+        let mut end_add: usize;
         let mut offset: usize;
         let mut segs: Vec<Segment> = Vec::new();
 
@@ -204,12 +204,12 @@ impl CPU {
             }
             None => {
                 offset = 2; // skip the header
-                start_add = (buf[offset] as usize) | (buf[offset + 1] as usize) << 8;
-                end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
             }
         };
 
         while offset < buf.len() {
+            start_add = (buf[offset] as usize) | (buf[offset + 1] as usize) << 8;
+            end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
             if start_add > 0xfffc || end_add > 0xffff || end_add < start_add + 2 {
                 return Err(LoadError::SegmentAddress);
             }

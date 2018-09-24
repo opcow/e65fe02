@@ -35,7 +35,14 @@ fn main() -> io::Result<()> {
                 .short("a")
                 .long("address")
                 .takes_value(true)
+                .conflicts_with("haddress")
                 .help("Positive integer: load address for raw binary"),
+        ).arg(
+            Arg::with_name("haddress")
+                .short("h")
+                .long("haddress")
+                .takes_value(true)
+                .help("Positive hexidecimal integer: load address for raw binary"),
         ).arg(
             Arg::with_name("disassemble")
                 .short("d")
@@ -64,23 +71,23 @@ fn main() -> io::Result<()> {
         .parse::<u32>()
         .unwrap_or(5);
 
-    let load_add = match matches.value_of("address") {
-        Some(add) => match add.parse::<usize>() {
-            Ok(x) => Some(x),
-            Err(_) => None,
-        },
-        None => None,
+    let load_add = if matches.is_present("address") {
+        match matches.value_of("address") {
+            Some(add) => match usize::from_str_radix(add, 10) {
+                Ok(x) => Some(x),
+                Err(_) => None,
+            },
+            None => None,
+        }
+    } else {
+        match matches.value_of("haddress") {
+            Some(add) => match usize::from_str_radix(add, 16) {
+                Ok(x) => Some(x),
+                Err(_) => None,
+            },
+            None => None,
+        }
     };
-
-    // .unwrap_or("5")
-    // .parse::<usize>();
-
-    // let addr: Option<usize> = if matches
-    //     .is_present("address") {
-    //         Some(0)
-    //     } else {
-    //         None
-    //     }
 
     let fname = matches.value_of("ifile").unwrap();
     let buf = read_program(fname)?;
