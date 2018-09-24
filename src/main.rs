@@ -31,6 +31,12 @@ fn main() -> io::Result<()> {
                 .index(1)
                 .help("Sets the binary file to read"),
         ).arg(
+            Arg::with_name("address")
+                .short("a")
+                .long("address")
+                .takes_value(true)
+                .help("Positive integer: load address for raw binary"),
+        ).arg(
             Arg::with_name("disassemble")
                 .short("d")
                 .multiple(false)
@@ -49,7 +55,7 @@ fn main() -> io::Result<()> {
                 .long("steps")
                 .takes_value(true)
                 .requires("trace")
-                .help("Positive interger: number of steps to trace"),
+                .help("Positive integer: number of steps to trace"),
         ).get_matches();
 
     let steps = matches
@@ -58,10 +64,28 @@ fn main() -> io::Result<()> {
         .parse::<u32>()
         .unwrap_or(5);
 
+    let load_add = match matches.value_of("address") {
+        Some(add) => match add.parse::<usize>() {
+            Ok(x) => Some(x),
+            Err(_) => None,
+        },
+        None => None,
+    };
+
+    // .unwrap_or("5")
+    // .parse::<usize>();
+
+    // let addr: Option<usize> = if matches
+    //     .is_present("address") {
+    //         Some(0)
+    //     } else {
+    //         None
+    //     }
+
     let fname = matches.value_of("ifile").unwrap();
     let buf = read_program(fname)?;
     let mut cpu = cpu65::CPU::new();
-    let segs = cpu.load(&buf)?;
+    let segs = cpu.load(&buf, load_add)?;
 
     // count_implemented();
     // println!();

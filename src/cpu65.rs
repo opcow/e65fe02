@@ -183,16 +183,33 @@ impl CPU {
         self.pc += ins.step; // update program counter
     }
 
-    pub fn load(&mut self, buf: &[u8]) -> Result<Vec<Segment>, LoadError> {
-        let mut start_add: usize;
-        let mut end_add: usize;
+    pub fn load(&mut self, buf: &[u8], load_add: Option<usize>) -> Result<Vec<Segment>, LoadError> {
+        let start_add: usize;
+        let end_add: usize;
+        let mut offset: usize;
         let mut segs: Vec<Segment> = Vec::new();
 
-        let mut offset = 2; // skip the header
-        while offset < buf.len() {
-            start_add = (buf[offset] as usize) | (buf[offset + 1] as usize) << 8;
-            end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
+        match load_add {
+            Some(add) => {
+                let seg_end = add + buf.len() - 1;
+                if add > 0xfffe || seg_end <= add || seg_end > 0xffff {
+                    return Err(LoadError::SegmentAddress);
+                }
+                segs.push(Segment {
+                    start: add,
+                    end: seg_end,
+                });
+                self.mem[add..=seg_end].clone_from_slice(&buf[0..]);
+                return Ok(segs);
+            }
+            None => {
+                offset = 2; // skip the header
+                start_add = (buf[offset] as usize) | (buf[offset + 1] as usize) << 8;
+                end_add = (buf[offset + 2] as usize) | (buf[offset + 3] as usize) << 8;
+            }
+        };
 
+        while offset < buf.len() {
             if start_add > 0xfffc || end_add > 0xffff || end_add < start_add + 2 {
                 return Err(LoadError::SegmentAddress);
             }
