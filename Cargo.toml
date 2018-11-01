@@ -8,3 +8,4 @@ authors = ["<mitch.crane@gmail.com>"]
 [dependencies]
 clap = "2.32.0"
 ascii = "0.9.1"
+termcolor ="1.0.4"
