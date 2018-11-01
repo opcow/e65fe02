@@ -85,7 +85,7 @@ pub struct CPU {
 /// let mut cpu = cpu65::CPU::new();
 /// ```
 impl fmt::Display for CPU {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ins = INSTRUCTIONS[self.mem[self.pc as usize] as usize];
         let opstr = CPU::get_format(
             ins.mode,
